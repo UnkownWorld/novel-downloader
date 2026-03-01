@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小说下载器 - 基于Legado书源</title>
+    <title>小说下载器</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -13,29 +13,27 @@
             padding: 20px;
             color: #fff;
         }
-        .container { max-width: 900px; margin: 0 auto; }
-        .header { text-align: center; margin-bottom: 30px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 25px; }
         .header h1 { 
-            font-size: 2rem; 
-            margin-bottom: 10px; 
+            font-size: 1.8rem; 
             background: linear-gradient(90deg, #e94560, #ff6b6b);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .header p { font-size: 1rem; opacity: 0.8; }
+        .header p { font-size: 0.9rem; opacity: 0.7; margin-top: 5px; }
         
         .card { 
             background: rgba(255,255,255,0.05); 
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 15px; 
-            padding: 25px; 
-            margin-bottom: 20px;
+            border-radius: 12px; 
+            padding: 20px; 
+            margin-bottom: 15px;
         }
         
-        .search-form { display: flex; gap: 10px; flex-wrap: wrap; }
+        .search-form { display: flex; gap: 10px; }
         .search-input { 
             flex: 1; 
-            min-width: 200px; 
             padding: 12px 15px; 
             border: 1px solid rgba(255,255,255,0.2);
             background: rgba(255,255,255,0.1);
@@ -47,50 +45,33 @@
         .search-input:focus { outline: none; border-color: #e94560; }
         
         .btn { 
-            padding: 12px 25px; 
+            padding: 12px 20px; 
             background: linear-gradient(90deg, #e94560, #ff6b6b); 
             color: white; 
             border: none; 
             border-radius: 8px; 
             font-size: 1rem; 
             cursor: pointer; 
-            transition: all 0.3s;
         }
-        .btn:hover { transform: translateY(-2px); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-success { background: linear-gradient(90deg, #00b894, #00cec9); }
         
-        .options { display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap; }
-        .option-group { display: flex; align-items: center; gap: 8px; }
-        .option-group label { font-size: 0.9rem; opacity: 0.9; }
-        .option-group select { 
-            padding: 8px 12px; 
-            border: 1px solid rgba(255,255,255,0.2);
-            background: rgba(255,255,255,0.1);
-            color: white;
-            border-radius: 5px;
-        }
-        .option-group select option { background: #1a1a2e; }
-        
-        .book-list { display: grid; gap: 10px; max-height: 400px; overflow-y: auto; }
         .book-item { 
-            display: flex; 
-            gap: 12px; 
             padding: 15px; 
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 10px; 
-            cursor: pointer; 
-            transition: all 0.3s;
-            background: rgba(255,255,255,0.02);
+            border-radius: 8px; 
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
         }
         .book-item:hover { border-color: #e94560; background: rgba(233, 69, 96, 0.1); }
-        .book-item.selected { border-color: #e94560; background: rgba(233, 69, 96, 0.15); }
-        .book-info { flex: 1; }
-        .book-info h3 { font-size: 1rem; margin-bottom: 3px; }
-        .book-info .meta { color: rgba(255,255,255,0.6); font-size: 0.85rem; }
+        .book-item.selected { border-color: #e94560; background: rgba(233, 69, 96, 0.2); }
+        .book-item h3 { font-size: 1rem; margin-bottom: 5px; }
+        .book-item .meta { color: rgba(255,255,255,0.6); font-size: 0.85rem; }
         
         .progress { margin-top: 15px; }
-        .progress-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 10px; }
+        .progress-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
         .progress-fill { height: 100%; background: linear-gradient(90deg, #e94560, #ff6b6b); transition: width 0.3s; }
         .progress-text { text-align: center; color: rgba(255,255,255,0.8); font-size: 0.9rem; }
         
@@ -111,35 +92,7 @@
         .toast.show { transform: translateX(0); }
         .toast.error { background: rgba(214, 48, 49, 0.9); }
         
-        .download-actions { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
-        
-        .preview { 
-            margin-top: 15px; 
-            padding: 15px; 
-            background: rgba(0,0,0,0.3); 
-            border-radius: 8px; 
-            font-size: 0.85rem;
-            max-height: 200px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-        
-        .source-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-        .source-section h3 { margin-bottom: 10px; font-size: 1rem; }
-        .source-section textarea { 
-            width: 100%; 
-            height: 100px; 
-            padding: 10px; 
-            border: 1px solid rgba(255,255,255,0.2);
-            background: rgba(255,255,255,0.05);
-            color: white;
-            border-radius: 8px; 
-            font-family: monospace; 
-            font-size: 0.85rem; 
-            resize: vertical; 
-        }
-        .source-section textarea::placeholder { color: rgba(255,255,255,0.3); }
+        .download-actions { display: flex; gap: 10px; margin-top: 15px; }
         
         .history-item { 
             display: flex; 
@@ -149,29 +102,40 @@
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 8px;
             margin-bottom: 8px;
-            background: rgba(255,255,255,0.02);
         }
         .history-info h4 { font-size: 0.95rem; }
         .history-info p { font-size: 0.8rem; color: rgba(255,255,255,0.5); }
         
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; }
         .tab { 
-            padding: 10px 20px; 
+            padding: 8px 16px; 
             background: rgba(255,255,255,0.1); 
             color: white; 
-            border: 1px solid rgba(255,255,255,0.2);
+            border: none;
             border-radius: 20px; 
             cursor: pointer; 
             font-size: 0.9rem;
         }
-        .tab.active { background: linear-gradient(90deg, #e94560, #ff6b6b); border-color: transparent; }
+        .tab.active { background: linear-gradient(90deg, #e94560, #ff6b6b); }
+        
+        .source-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📚 小说下载器</h1>
-            <p>输入小说名称，自动搜索并下载</p>
+            <p>输入小说名称，自动搜索下载</p>
         </div>
         
         <div class="tabs">
@@ -186,22 +150,11 @@
                     <input type="text" class="search-input" id="searchInput" placeholder="输入小说名称..." required>
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
                 </form>
-                <div class="options">
-                    <div class="option-group">
-                        <label>下载章数:</label>
-                        <select id="chapterLimit">
-                            <option value="50">前50章</option>
-                            <option value="100" selected>前100章</option>
-                            <option value="200">前200章</option>
-                            <option value="0">全部</option>
-                        </select>
-                    </div>
-                </div>
             </div>
             
             <div class="card hidden" id="resultsCard">
-                <h3 style="margin-bottom:15px">搜索结果 <span id="resultCount" style="opacity:0.6"></span></h3>
-                <div class="book-list" id="bookList"></div>
+                <h3 style="margin-bottom:12px">搜索结果 <span id="resultCount" style="opacity:0.6"></span></h3>
+                <div id="bookList"></div>
             </div>
             
             <div class="card hidden" id="downloadCard">
@@ -212,22 +165,21 @@
                 </div>
                 <div class="download-actions hidden" id="saveActions">
                     <button class="btn btn-success" onclick="saveToFile()">💾 保存到本地</button>
-                    <button class="btn" onclick="copyToClipboard()">📋 复制内容</button>
+                    <button class="btn" onclick="copyToClipboard()">📋 复制</button>
                 </div>
-                <div class="preview hidden" id="preview"></div>
             </div>
         </div>
         
         <!-- 历史页面 -->
         <div id="historyTab" class="hidden">
             <div class="card">
-                <h3 style="margin-bottom:15px">下载历史</h3>
+                <h3 style="margin-bottom:12px">下载历史</h3>
                 <div id="historyList"></div>
-                <button class="btn" onclick="clearHistory()" style="margin-top:15px;background:rgba(255,255,255,0.1)">清空历史</button>
+                <button class="btn" onclick="clearHistory()" style="margin-top:12px;background:rgba(255,255,255,0.1)">清空历史</button>
             </div>
         </div>
         
-        <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:20px;font-size:0.85rem">
+        <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:15px;font-size:0.8rem">
             书源来源于网络，仅供学习交流
         </div>
     </div>
@@ -236,16 +188,11 @@
     
     <script>
         // 书源列表
-        const BOOK_SOURCES = [
+        const SOURCES = [
             {
-                name: "笔趣阁",
-                searchUrl: "https://www.biquge.com/search.php?keyword=",
-                baseUrl: "https://www.biquge.com"
-            },
-            {
-                name: "起点中文网",
-                searchUrl: "https://www.qidian.com/so/",
-                baseUrl: "https://www.qidian.com"
+                name: "贼吧网",
+                searchUrl: "https://m.zei8.vip/search.php?keyword=",
+                baseUrl: "https://m.zei8.vip"
             }
         ];
         
@@ -282,16 +229,43 @@
             btn.disabled = true;
             btn.textContent = '搜索中...';
             
-            // 模拟搜索结果（实际需要后端API）
-            searchResults = [
-                { name: keyword, author: '佚名', source: '笔趣阁', url: '#' },
-                { name: keyword + ' 续集', author: '佚名', source: '起点中文网', url: '#' }
-            ];
+            try {
+                // 使用代理搜索
+                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://m.zei8.vip/search.php?keyword=' + keyword)}`);
+                const data = await response.json();
+                const html = data.contents;
+                
+                // 解析搜索结果
+                const results = [];
+                const bookPattern = /<a[^>]*href="(\/txt\/\d+\.html)"[^>]*>([^<]+)<\/a>/g;
+                let match;
+                
+                while ((match = bookPattern.exec(html)) !== null) {
+                    const url = match[1];
+                    const name = match[2].trim();
+                    if (name && !results.some(r => r.name === name)) {
+                        results.push({
+                            name: name,
+                            author: '',
+                            source: '贼吧网',
+                            url: 'https://m.zei8.vip' + url
+                        });
+                    }
+                }
+                
+                if (results.length > 0) {
+                    searchResults = results;
+                    displayResults(results);
+                    showToast(`找到 ${results.length} 个结果`);
+                } else {
+                    showToast('未找到结果，请尝试其他关键词', true);
+                }
+            } catch (err) {
+                showToast('搜索失败: ' + err.message, true);
+            }
             
-            displayResults(searchResults);
             btn.disabled = false;
             btn.textContent = '搜索';
-            showToast('演示模式：请直接点击书籍下载');
         });
         
         function displayResults(results) {
@@ -300,10 +274,8 @@
             
             list.innerHTML = results.map((book, i) => `
                 <div class="book-item" onclick="selectBook(${i})">
-                    <div class="book-info">
-                        <h3>《${book.name}》</h3>
-                        <div class="meta">作者: ${book.author} | 来源: ${book.source}</div>
-                    </div>
+                    <h3>《${book.name}》</h3>
+                    <div class="meta">来源: ${book.source}</div>
                 </div>
             `).join('');
             
@@ -319,47 +291,91 @@
             
             document.getElementById('downloadInfo').innerHTML = `
                 <h3>《${selectedBook.name}》</h3>
-                <p style="color:rgba(255,255,255,0.6);margin-top:5px">作者: ${selectedBook.author} | ${selectedBook.source}</p>
+                <p style="color:rgba(255,255,255,0.6);margin-top:5px">来源: ${selectedBook.source}</p>
+                <button class="btn" id="downloadBtn" style="margin-top:15px" onclick="startDownload()">📥 开始下载</button>
             `;
             document.getElementById('downloadCard').classList.remove('hidden');
             document.getElementById('progressSection').classList.add('hidden');
             document.getElementById('saveActions').classList.add('hidden');
-            document.getElementById('preview').classList.add('hidden');
-            document.getElementById('downloadBtn')?.classList.remove('hidden');
         }
         
-        // 模拟下载
+        // 下载
         async function startDownload() {
             if (!selectedBook) return;
             
             document.getElementById('progressSection').classList.remove('hidden');
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = '正在获取书籍信息...';
             downloadedContent = '';
             
-            // 生成模拟内容
-            const chapters = parseInt(document.getElementById('chapterLimit').value) || 100;
-            
-            downloadedContent = `书名: ${selectedBook.name}\n作者: ${selectedBook.author}\n来源: ${selectedBook.source}\n下载时间: ${new Date().toLocaleString()}\n\n${'='.repeat(40)}\n\n`;
-            
-            for (let i = 1; i <= chapters; i++) {
-                const progress = Math.round(i / chapters * 100);
-                document.getElementById('progressFill').style.width = progress + '%';
-                document.getElementById('progressText').textContent = `下载中: 第${i}章 (${progress}%)`;
+            try {
+                // 获取书籍详情页
+                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(selectedBook.url)}`);
+                const data = await response.json();
+                const html = data.contents;
                 
-                downloadedContent += `第${i}章 章节标题${i}\n\n`;
-                downloadedContent += `这是第${i}章的内容。这里是小说正文，包含精彩的剧情和人物对话...\n\n`.repeat(10);
-                downloadedContent += '\n';
+                // 查找下载链接
+                const downloadPattern = /<a[^>]*href="(https?:\/\/txt\.zei8\.me\/[^"]+\.zip)"[^>]*>/i;
+                const match = html.match(downloadPattern);
                 
-                await new Promise(r => setTimeout(r, 20));
+                if (match) {
+                    document.getElementById('progressText').textContent = '找到下载链接，正在获取文件...';
+                    document.getElementById('progressFill').style.width = '30%';
+                    
+                    const zipUrl = match[1];
+                    
+                    // 尝试获取ZIP文件
+                    try {
+                        const zipResponse = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(zipUrl)}`);
+                        const zipBlob = await zipResponse.blob();
+                        
+                        document.getElementById('progressFill').style.width = '60%';
+                        document.getElementById('progressText').textContent = '正在解压文件...';
+                        
+                        // 使用JSZip解压
+                        if (typeof JSZip === 'undefined') {
+                            // 动态加载JSZip
+                            const script = document.createElement('script');
+                            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+                            document.head.appendChild(script);
+                            await new Promise(resolve => script.onload = resolve);
+                        }
+                        
+                        const zip = await JSZip.loadAsync(zipBlob);
+                        const files = Object.keys(zip.files);
+                        const txtFile = files.find(f => f.endsWith('.txt'));
+                        
+                        if (txtFile) {
+                            downloadedContent = await zip.file(txtFile).async('string');
+                            
+                            // 尝试检测编码
+                            if (downloadedContent.includes('�')) {
+                                // 可能是GBK编码
+                                downloadedContent = await zip.file(txtFile).async('uint8array');
+                                // 简单的GBK解码
+                                const decoder = new TextDecoder('gbk');
+                                downloadedContent = decoder.decode(downloadedContent);
+                            }
+                            
+                            document.getElementById('progressFill').style.width = '100%';
+                            document.getElementById('progressText').textContent = '下载完成！';
+                            document.getElementById('saveActions').classList.remove('hidden');
+                            
+                            saveToHistory();
+                            showToast('下载完成！点击保存到本地');
+                        } else {
+                            throw new Error('ZIP文件中没有找到TXT文件');
+                        }
+                    } catch (zipErr) {
+                        throw new Error('下载文件失败: ' + zipErr.message);
+                    }
+                } else {
+                    throw new Error('未找到下载链接');
+                }
+            } catch (err) {
+                document.getElementById('progressText').textContent = '错误: ' + err.message;
+                showToast('下载失败: ' + err.message, true);
             }
-            
-            document.getElementById('progressText').textContent = '下载完成！';
-            document.getElementById('preview').textContent = downloadedContent.substring(0, 1000) + '...\n\n(更多内容请保存查看)';
-            document.getElementById('preview').classList.remove('hidden');
-            document.getElementById('saveActions').classList.remove('hidden');
-            
-            // 保存历史
-            saveToHistory();
-            showToast('下载完成！点击保存到本地');
         }
         
         // 保存到本地
@@ -370,7 +386,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${selectedBook.name}_${selectedBook.author}.txt`;
+            a.download = `${selectedBook.name}.txt`;
             a.click();
             URL.revokeObjectURL(url);
             showToast('文件已保存！');
@@ -380,7 +396,7 @@
         async function copyToClipboard() {
             if (!downloadedContent) return showToast('没有内容', true);
             try {
-                await navigator.clipboard.writeText(downloadedContent);
+                await navigator.clipboard.writeText(downloadedContent.substring(0, 100000)); // 限制大小
                 showToast('已复制到剪贴板！');
             } catch (e) {
                 showToast('复制失败', true);
@@ -392,14 +408,13 @@
             const item = {
                 id: Date.now(),
                 name: selectedBook.name,
-                author: selectedBook.author,
                 source: selectedBook.source,
-                content: downloadedContent,
+                content: downloadedContent.substring(0, 500000), // 限制大小
                 date: new Date().toLocaleString(),
                 size: (downloadedContent.length / 1024).toFixed(1) + ' KB'
             };
             downloadHistory.unshift(item);
-            if (downloadHistory.length > 20) downloadHistory = downloadHistory.slice(0, 20);
+            if (downloadHistory.length > 10) downloadHistory = downloadHistory.slice(0, 10);
             localStorage.setItem('novelHistory', JSON.stringify(downloadHistory));
         }
         
@@ -413,7 +428,7 @@
                 <div class="history-item">
                     <div class="history-info">
                         <h4>《${item.name}》</h4>
-                        <p>${item.author} | ${item.size} | ${item.date}</p>
+                        <p>${item.size} | ${item.date}</p>
                     </div>
                     <button class="btn" style="padding:6px 12px;font-size:0.8rem" onclick="downloadHistoryItem(${item.id})">保存</button>
                 </div>
@@ -427,7 +442,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${item.name}_${item.author}.txt`;
+                a.download = `${item.name}.txt`;
                 a.click();
                 URL.revokeObjectURL(url);
             }
@@ -442,15 +457,6 @@
         
         // 初始化
         renderHistory();
-        
-        // 添加下载按钮点击事件
-        document.getElementById('downloadInfo').addEventListener('click', (e) => {
-            if (e.target.id === 'downloadBtn') startDownload();
-        });
-        
-        // 动态添加下载按钮
-        const downloadInfoDiv = document.getElementById('downloadInfo');
-        downloadInfoDiv.innerHTML += '<button class="btn" id="downloadBtn" style="margin-top:15px">📥 开始下载</button>';
     </script>
 </body>
 </html>
