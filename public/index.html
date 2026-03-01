@@ -3,121 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小说下载器</title>
+    <title>小说下载器 - Legado书源</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
             min-height: 100vh;
-            padding: 20px;
+            padding: 15px;
             color: #fff;
+            font-size: 14px;
         }
-        .container { max-width: 800px; margin: 0 auto; }
+        .container { max-width: 900px; margin: 0 auto; }
         .header { text-align: center; margin-bottom: 20px; }
         .header h1 { 
-            font-size: 1.8rem; 
+            font-size: 1.6rem; 
             background: linear-gradient(90deg, #e94560, #ff6b6b);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .header p { font-size: 0.85rem; opacity: 0.7; margin-top: 5px; }
+        .header p { font-size: 0.8rem; opacity: 0.7; margin-top: 5px; }
         
         .card { 
             background: rgba(255,255,255,0.05); 
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px; 
-            padding: 20px; 
-            margin-bottom: 15px;
+            border-radius: 10px; 
+            padding: 15px; 
+            margin-bottom: 12px;
         }
         
-        .search-form { display: flex; gap: 10px; flex-wrap: wrap; }
-        .search-input { 
-            flex: 1; 
-            min-width: 200px;
-            padding: 12px 15px; 
+        .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .form-row input { flex: 1; min-width: 150px; }
+        
+        input, select {
+            padding: 10px 12px;
             border: 1px solid rgba(255,255,255,0.2);
             background: rgba(255,255,255,0.1);
             color: white;
-            border-radius: 8px; 
-            font-size: 1rem; 
+            border-radius: 6px;
+            font-size: 0.9rem;
         }
-        .search-input::placeholder { color: rgba(255,255,255,0.5); }
-        .search-input:focus { outline: none; border-color: #e94560; }
+        input::placeholder { color: rgba(255,255,255,0.4); }
+        input:focus, select:focus { outline: none; border-color: #e94560; }
+        select option { background: #1a1a2e; }
         
         .btn { 
-            padding: 12px 20px; 
+            padding: 10px 18px; 
             background: linear-gradient(90deg, #e94560, #ff6b6b); 
             color: white; 
             border: none; 
-            border-radius: 8px; 
-            font-size: 0.95rem; 
+            border-radius: 6px; 
+            font-size: 0.9rem; 
             cursor: pointer; 
-            transition: all 0.2s;
+            white-space: nowrap;
         }
         .btn:hover { opacity: 0.9; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-success { background: linear-gradient(90deg, #00b894, #00cec9); }
         .btn-secondary { background: rgba(255,255,255,0.15); }
         .btn-danger { background: linear-gradient(90deg, #d63031, #e17055); }
+        .btn-small { padding: 6px 12px; font-size: 0.8rem; }
         
         .book-item { 
-            padding: 15px; 
+            padding: 12px; 
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px; 
-            margin-bottom: 10px;
+            border-radius: 6px; 
+            margin-bottom: 8px;
             cursor: pointer;
             transition: all 0.2s;
         }
         .book-item:hover { border-color: #e94560; background: rgba(233, 69, 96, 0.1); }
         .book-item.selected { border-color: #e94560; background: rgba(233, 69, 96, 0.2); }
-        .book-item h3 { font-size: 1rem; margin-bottom: 5px; }
-        .book-item .meta { color: rgba(255,255,255,0.6); font-size: 0.85rem; }
+        .book-item h3 { font-size: 0.95rem; margin-bottom: 4px; }
+        .book-item .meta { color: rgba(255,255,255,0.6); font-size: 0.8rem; }
+        .book-item .intro { color: rgba(255,255,255,0.5); font-size: 0.75rem; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         
-        .progress { margin-top: 15px; }
-        .progress-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+        .progress { margin-top: 12px; }
+        .progress-bar { height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
         .progress-fill { height: 100%; background: linear-gradient(90deg, #e94560, #ff6b6b); transition: width 0.3s; }
-        .progress-text { text-align: center; color: rgba(255,255,255,0.8); font-size: 0.9rem; }
+        .progress-text { text-align: center; color: rgba(255,255,255,0.8); font-size: 0.85rem; }
         
         .hidden { display: none !important; }
         
         .toast {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 12px 20px;
+            bottom: 15px;
+            right: 15px;
+            padding: 10px 18px;
             background: rgba(0, 184, 148, 0.9);
             color: white;
-            border-radius: 8px;
+            border-radius: 6px;
             transform: translateX(200%);
             transition: transform 0.3s;
             z-index: 1000;
-            max-width: 300px;
+            max-width: 280px;
+            font-size: 0.85rem;
         }
         .toast.show { transform: translateX(0); }
         .toast.error { background: rgba(214, 48, 49, 0.9); }
         
-        .download-actions { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
-        
-        .history-item { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            padding: 12px; 
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
-            margin-bottom: 8px;
-        }
-        .history-info h4 { font-size: 0.95rem; }
-        .history-info p { font-size: 0.8rem; color: rgba(255,255,255,0.5); }
-        
-        .tabs { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
+        .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
         .tab { 
-            padding: 8px 16px; 
+            padding: 6px 14px; 
             background: rgba(255,255,255,0.1); 
             color: white; 
             border: none;
-            border-radius: 20px; 
+            border-radius: 15px; 
             cursor: pointer; 
             font-size: 0.85rem;
         }
@@ -127,73 +118,66 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 12px;
+            padding: 8px 10px;
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 6px;
-            margin-bottom: 6px;
+            border-radius: 5px;
+            margin-bottom: 5px;
             background: rgba(255,255,255,0.02);
+            font-size: 0.85rem;
         }
         .source-item .name { font-weight: 500; }
-        .source-item .url { font-size: 0.75rem; color: rgba(255,255,255,0.4); }
+        .source-item .url { font-size: 0.7rem; color: rgba(255,255,255,0.4); }
         
         textarea {
             width: 100%;
-            height: 120px;
-            padding: 12px;
+            height: 100px;
+            padding: 10px;
             border: 1px solid rgba(255,255,255,0.2);
             background: rgba(255,255,255,0.05);
             color: white;
-            border-radius: 8px;
+            border-radius: 6px;
             font-family: monospace;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             resize: vertical;
         }
         textarea::placeholder { color: rgba(255,255,255,0.3); }
         
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
-        }
-        .file-input-wrapper input[type="file"] {
-            position: absolute;
-            left: 0;
-            top: 0;
-            opacity: 0;
-            cursor: pointer;
-            width: 100%;
-            height: 100%;
-        }
+        .stats { display: flex; gap: 10px; margin-bottom: 12px; }
+        .stat { text-align: center; padding: 8px 12px; background: rgba(233, 69, 96, 0.1); border-radius: 6px; border: 1px solid rgba(233, 69, 96, 0.2); }
+        .stat .num { font-size: 1.3rem; font-weight: bold; color: #e94560; }
+        .stat .label { font-size: 0.7rem; color: rgba(255,255,255,0.6); }
         
-        .stats {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        .stat {
-            text-align: center;
-            padding: 10px 15px;
-            background: rgba(233, 69, 96, 0.1);
-            border-radius: 8px;
-            border: 1px solid rgba(233, 69, 96, 0.2);
-        }
-        .stat .num { font-size: 1.5rem; font-weight: bold; color: #e94560; }
-        .stat .label { font-size: 0.75rem; color: rgba(255,255,255,0.6); }
+        .source-list { max-height: 200px; overflow-y: auto; margin-bottom: 10px; }
         
-        .source-list {
-            max-height: 250px;
+        .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        
+        .file-input-wrapper { position: relative; display: inline-block; }
+        .file-input-wrapper input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+        
+        .history-item { 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; margin-bottom: 6px;
+        }
+        .history-info h4 { font-size: 0.9rem; }
+        .history-info p { font-size: 0.75rem; color: rgba(255,255,255,0.5); }
+        
+        .chapter-list { max-height: 300px; overflow-y: auto; }
+        .chapter-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-size: 0.85rem; }
+        .chapter-item:hover { background: rgba(255,255,255,0.05); }
+        
+        .loading { text-align: center; padding: 20px; color: rgba(255,255,255,0.5); }
+        
+        .code-block {
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
             overflow-y: auto;
-            margin-bottom: 15px;
-        }
-        
-        .btn-group {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 0.8rem;
         }
     </style>
 </head>
@@ -201,36 +185,55 @@
     <div class="container">
         <div class="header">
             <h1>📚 小说下载器</h1>
-            <p>支持自定义书源，搜索下载小说</p>
+            <p>基于Legado书源规则，支持完整规则解析</p>
         </div>
         
         <div class="tabs">
             <button class="tab active" onclick="showTab('search')">🔍 搜索下载</button>
             <button class="tab" onclick="showTab('sources')">📚 书源管理</button>
-            <button class="tab" onclick="showTab('history')">📁 下载历史</button>
+            <button class="tab" onclick="showTab('history')">📁 历史</button>
+            <button class="tab" onclick="showTab('help')">❓ 帮助</button>
         </div>
         
         <!-- 搜索页面 -->
         <div id="searchTab">
             <div class="card">
-                <form class="search-form" id="searchForm">
-                    <input type="text" class="search-input" id="searchInput" placeholder="输入小说名称..." required>
+                <form class="form-row" id="searchForm">
+                    <input type="text" id="searchInput" placeholder="输入小说名称..." required>
+                    <select id="sourceSelect" style="min-width:120px">
+                        <option value="">全部书源</option>
+                    </select>
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
                 </form>
             </div>
             
             <div class="card hidden" id="resultsCard">
-                <h3 style="margin-bottom:12px">搜索结果 <span id="resultCount" style="opacity:0.6"></span></h3>
+                <h3 style="margin-bottom:10px;font-size:0.95rem">搜索结果 <span id="resultCount" style="opacity:0.6"></span></h3>
                 <div id="bookList"></div>
             </div>
             
-            <div class="card hidden" id="downloadCard">
-                <div id="downloadInfo"></div>
+            <div class="card hidden" id="bookInfoCard">
+                <div id="bookInfo"></div>
                 <div class="progress hidden" id="progressSection">
                     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
                     <div class="progress-text" id="progressText">准备中...</div>
                 </div>
-                <div class="download-actions hidden" id="saveActions">
+                <div id="chapterListSection" class="hidden" style="margin-top:12px">
+                    <h4 style="margin-bottom:8px;font-size:0.9rem">章节列表 <span id="chapterCount" style="opacity:0.6"></span></h4>
+                    <div class="chapter-list" id="chapterList"></div>
+                </div>
+                <div class="btn-group hidden" id="downloadActions" style="margin-top:12px">
+                    <button class="btn" onclick="downloadSelected()">📥 下载选中章节</button>
+                    <button class="btn btn-success" onclick="downloadAll()">📥 下载全部</button>
+                </div>
+            </div>
+            
+            <div class="card hidden" id="downloadCard">
+                <div class="progress">
+                    <div class="progress-bar"><div class="progress-fill" id="downloadProgressFill" style="width:0%"></div></div>
+                    <div class="progress-text" id="downloadProgressText">准备中...</div>
+                </div>
+                <div class="btn-group hidden" id="saveActions" style="margin-top:12px">
                     <button class="btn btn-success" onclick="saveToFile()">💾 保存到本地</button>
                     <button class="btn" onclick="copyToClipboard()">📋 复制</button>
                 </div>
@@ -247,36 +250,54 @@
                     </div>
                 </div>
                 
-                <h3 style="margin-bottom:10px">导入书源</h3>
-                <p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:10px">
-                    支持Legado格式JSON，可以是单个书源或书源数组
+                <h3 style="margin-bottom:8px;font-size:0.95rem">导入书源</h3>
+                <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:8px">
+                    支持Legado完整格式JSON，包含搜索规则、目录规则、内容规则等
                 </p>
                 
-                <textarea id="sourceInput" placeholder='粘贴JSON书源，例如：
-[
-  {
-    "bookSourceName": "笔趣阁",
-    "bookSourceUrl": "https://www.biquge.com",
-    "searchUrl": "https://www.biquge.com/search.php?keyword={{key}}"
+                <textarea id="sourceInput" placeholder='粘贴Legado格式书源JSON，例如：
+{
+  "bookSourceName": "笔趣阁",
+  "bookSourceUrl": "https://www.biquge.com",
+  "searchUrl": "/search.php?keyword={{key}}",
+  "ruleSearch": {
+    "bookList": "#search-result-list li",
+    "name": ".result-game-item-title a",
+    "author": ".result-game-item-info-tag:eq(0) span:eq(1)",
+    "bookUrl": ".result-game-item-title a@href"
+  },
+  "ruleBookInfo": {
+    "name": "#info h1",
+    "author": "#info p:eq(0)",
+    "intro": "#intro"
+  },
+  "ruleToc": {
+    "chapterList": "#list dl dd a",
+    "chapterName": "text",
+    "chapterUrl": "href"
+  },
+  "ruleContent": {
+    "content": "#content"
   }
-]'></textarea>
+}'></textarea>
                 
-                <div class="btn-group" style="margin-top:10px">
+                <div class="btn-group" style="margin-top:8px">
                     <button class="btn" onclick="importSources()">📥 导入JSON</button>
                     <div class="file-input-wrapper">
                         <button class="btn btn-secondary">📁 选择文件</button>
                         <input type="file" accept=".json,.txt" onchange="importFromFile(event)">
                     </div>
+                    <button class="btn btn-secondary" onclick="importFromUrl()">🌐 从URL导入</button>
                 </div>
                 
-                <h3 style="margin:15px 0 10px">当前书源</h3>
+                <h3 style="margin:12px 0 8px;font-size:0.95rem">当前书源</h3>
                 <div class="source-list" id="sourceList">
-                    <p style="text-align:center;color:rgba(255,255,255,0.4);padding:20px">加载中...</p>
+                    <p class="loading">加载中...</p>
                 </div>
                 
                 <div class="btn-group">
-                    <button class="btn btn-success btn-small" onclick="loadDefaultSources()">📦 加载默认书源</button>
-                    <button class="btn btn-secondary btn-small" onclick="exportSources()">📤 导出书源</button>
+                    <button class="btn btn-success btn-small" onclick="loadDefaultSources()">📦 默认书源</button>
+                    <button class="btn btn-secondary btn-small" onclick="exportSources()">📤 导出</button>
                     <button class="btn btn-danger btn-small" onclick="clearSources()">🗑️ 清空</button>
                 </div>
             </div>
@@ -285,55 +306,379 @@
         <!-- 历史页面 -->
         <div id="historyTab" class="hidden">
             <div class="card">
-                <h3 style="margin-bottom:12px">下载历史</h3>
+                <h3 style="margin-bottom:10px;font-size:0.95rem">下载历史</h3>
                 <div id="historyList"></div>
-                <button class="btn btn-secondary" onclick="clearHistory()" style="margin-top:12px">清空历史</button>
+                <button class="btn btn-secondary btn-small" onclick="clearHistory()" style="margin-top:10px">清空历史</button>
             </div>
         </div>
         
-        <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:15px;font-size:0.8rem">
-            书源来源于网络，仅供学习交流
+        <!-- 帮助页面 -->
+        <div id="helpTab" class="hidden">
+            <div class="card">
+                <h3 style="margin-bottom:10px;font-size:0.95rem">📖 书源规则说明</h3>
+                <div class="code-block">
+{
+  "bookSourceName": "书源名称",
+  "bookSourceUrl": "书源基础URL",
+  "searchUrl": "搜索URL，{{key}}为关键词占位符",
+  
+  "ruleSearch": {
+    "bookList": "书籍列表选择器",
+    "name": "书名选择器",
+    "author": "作者选择器",
+    "bookUrl": "书籍详情URL选择器",
+    "coverUrl": "封面选择器",
+    "intro": "简介选择器"
+  },
+  
+  "ruleBookInfo": {
+    "name": "书名",
+    "author": "作者",
+    "intro": "简介",
+    "coverUrl": "封面",
+    "tocUrl": "目录页URL"
+  },
+  
+  "ruleToc": {
+    "chapterList": "章节列表选择器",
+    "chapterName": "章节名选择器",
+    "chapterUrl": "章节URL选择器"
+  },
+  
+  "ruleContent": {
+    "content": "正文内容选择器"
+  }
+}</div>
+                
+                <h4 style="margin:12px 0 8px;font-size:0.9rem">选择器语法</h4>
+                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
+                    <li><code>.class</code> - CSS类选择器</li>
+                    <li><code>#id</code> - ID选择器</li>
+                    <li><code>tag</code> - 标签选择器</li>
+                    <li><code>@attr</code> - 获取属性值</li>
+                    <li><code>@text</code> - 获取文本</li>
+                    <li><code>@html</code> - 获取HTML</li>
+                    <li><code>:eq(n)</code> - 第n个元素</li>
+                    <li><code>:first</code> / <code>:last</code> - 首个/末个</li>
+                    <li><code>##regex</code> - 正则替换</li>
+                    <li><code>{{key}}</code> - 关键词占位符</li>
+                    <li><code>{{page}}</code> - 页码占位符</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:12px;font-size:0.75rem">
+            基于Legado书源规则 | 书源来源于网络，仅供学习交流
         </div>
     </div>
     
     <div class="toast" id="toast"></div>
     
     <script>
-        // 默认书源
-        const DEFAULT_SOURCES = [
-            {
-                bookSourceName: "贼吧网",
-                bookSourceUrl: "https://m.zei8.vip",
-                searchUrl: "https://m.zei8.vip/search.php?keyword={{key}}",
-                enabled: true
+        // ========== 核心解析器 ==========
+        class RuleParser {
+            constructor(html) {
+                this.html = html;
+                this.doc = new DOMParser().parseFromString(html, 'text/html');
             }
-        ];
+            
+            // 解析选择器
+            parseSelector(selector) {
+                if (!selector) return null;
+                
+                // 处理特殊语法
+                let attr = 'text';
+                let filterRegex = null;
+                
+                // 分离属性获取器 @attr
+                if (selector.includes('@')) {
+                    const parts = selector.split('@');
+                    selector = parts[0].trim();
+                    attr = parts[1].trim();
+                }
+                
+                // 分离正则过滤器 ##
+                if (selector.includes('##')) {
+                    const parts = selector.split('##');
+                    selector = parts[0].trim();
+                    filterRegex = parts[1].trim();
+                }
+                
+                // 转换Legado语法到标准CSS
+                selector = this.convertLegadoSelector(selector);
+                
+                return { selector, attr, filterRegex };
+            }
+            
+            // 转换Legado选择器语法
+            convertLegadoSelector(sel) {
+                if (!sel) return sel;
+                
+                // @js: 开头的JS规则暂不支持，返回空
+                if (sel.startsWith('@js:') || sel.startsWith('js:')) {
+                    return null;
+                }
+                
+                // XPath 暂时转为空
+                if (sel.startsWith('//') || sel.startsWith('./')) {
+                    return null;
+                }
+                
+                // class. -> .
+                sel = sel.replace(/^class\./, '.');
+                // id. -> #
+                sel = sel.replace(/^id\./, '#');
+                // tag. -> tag
+                sel = sel.replace(/^tag\./, '');
+                
+                // .0 -> :eq(0), .1 -> :eq(1)
+                sel = sel.replace(/\.(\d+)(?=[\.\[\:@]|$)/g, ':eq($1)');
+                
+                // @text, @html, @href 等在 parseSelector 中处理
+                
+                return sel;
+            }
+            
+            // 获取元素
+            selectElements(selector, context = this.doc) {
+                try {
+                    const parsed = this.parseSelector(selector);
+                    if (!parsed || !parsed.selector) return [];
+                    
+                    let elements = [];
+                    
+                    // 处理 :eq(), :first, :last
+                    let eqIndex = -1;
+                    let isFirst = false;
+                    let isLast = false;
+                    
+                    let sel = parsed.selector;
+                    
+                    if (sel.includes(':eq(')) {
+                        const match = sel.match(/:eq\((\d+)\)/);
+                        if (match) {
+                            eqIndex = parseInt(match[1]);
+                            sel = sel.replace(/:eq\(\d+\)/, '');
+                        }
+                    }
+                    
+                    if (sel.includes(':first')) {
+                        isFirst = true;
+                        sel = sel.replace(':first', '');
+                    }
+                    
+                    if (sel.includes(':last')) {
+                        isLast = true;
+                        sel = sel.replace(':last', '');
+                    }
+                    
+                    sel = sel.trim();
+                    
+                    if (sel) {
+                        try {
+                            elements = Array.from(context.querySelectorAll(sel));
+                        } catch (e) {
+                            return [];
+                        }
+                    } else {
+                        elements = [context];
+                    }
+                    
+                    if (eqIndex >= 0 && elements[eqIndex]) {
+                        elements = [elements[eqIndex]];
+                    } else if (isFirst && elements[0]) {
+                        elements = [elements[0]];
+                    } else if (isLast && elements.length) {
+                        elements = [elements[elements.length - 1]];
+                    }
+                    
+                    return elements;
+                } catch (e) {
+                    return [];
+                }
+            }
+            
+            // 获取单个元素
+            selectElement(selector, context = this.doc) {
+                const elements = this.selectElements(selector, context);
+                return elements[0] || null;
+            }
+            
+            // 获取字符串值
+            getString(selector, context = this.doc) {
+                const parsed = this.parseSelector(selector);
+                if (!parsed) return '';
+                
+                const element = this.selectElement(parsed.selector, context);
+                if (!element) return '';
+                
+                let value = '';
+                
+                // 获取值
+                if (parsed.attr === 'text') {
+                    value = element.textContent || '';
+                } else if (parsed.attr === 'html') {
+                    value = element.innerHTML || '';
+                } else if (parsed.attr === 'href' || parsed.attr === 'src') {
+                    value = element.getAttribute(parsed.attr) || '';
+                    // 处理相对路径
+                    if (value && !value.startsWith('http')) {
+                        try {
+                            value = new URL(value, this.doc.baseURI || window.location.href).href;
+                        } catch (e) {}
+                    }
+                } else if (parsed.attr.startsWith('attr:')) {
+                    const attrName = parsed.attr.substring(5);
+                    value = element.getAttribute(attrName) || '';
+                } else if (element.getAttribute) {
+                    value = element.getAttribute(parsed.attr) || element.textContent || '';
+                } else {
+                    value = element.textContent || '';
+                }
+                
+                // 应用正则过滤
+                if (parsed.filterRegex && value) {
+                    try {
+                        // 简单的正则替换
+                        const parts = parsed.filterRegex.split('##');
+                        if (parts.length === 2) {
+                            const pattern = parts[0];
+                            const replacement = parts[1];
+                            value = value.replace(new RegExp(pattern, 'g'), replacement);
+                        } else {
+                            // 提取匹配
+                            const match = value.match(new RegExp(parsed.filterRegex));
+                            if (match) value = match[1] || match[0];
+                        }
+                    } catch (e) {}
+                }
+                
+                return value.trim();
+            }
+            
+            // 获取列表
+            getList(listSelector, itemRules, context = this.doc) {
+                const items = [];
+                const elements = this.selectElements(listSelector, context);
+                
+                elements.forEach(el => {
+                    const item = {};
+                    for (const [key, rule] of Object.entries(itemRules)) {
+                        if (typeof rule === 'string') {
+                            item[key] = this.getString(rule, el);
+                        }
+                    }
+                    items.push(item);
+                });
+                
+                return items;
+            }
+        }
         
+        // ========== HTTP请求 ==========
+        async function fetchHtml(url) {
+            try {
+                // 使用代理绕过CORS
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                return data.contents || '';
+            } catch (e) {
+                throw new Error('请求失败: ' + e.message);
+            }
+        }
+        
+        // ========== 应用状态 ==========
         let bookSources = [];
         let searchResults = [];
         let selectedBook = null;
+        let selectedSource = null;
+        let chapters = [];
         let downloadedContent = '';
         let downloadHistory = JSON.parse(localStorage.getItem('novelHistory') || '[]');
         
-        // 初始化书源
-        function initSources() {
+        // 初始化
+        function init() {
+            loadSources();
+            renderHistory();
+            updateSourceSelect();
+        }
+        
+        function loadSources() {
             const saved = localStorage.getItem('bookSources');
             if (saved) {
                 bookSources = JSON.parse(saved);
             } else {
-                bookSources = [...DEFAULT_SOURCES];
+                // 默认书源
+                bookSources = getDefaultSources();
                 saveSources();
             }
             updateSourceCount();
+            renderSourceList();
+        }
+        
+        function getDefaultSources() {
+            return [
+                {
+                    bookSourceName: "笔趣阁",
+                    bookSourceUrl: "https://www.biquge.com",
+                    searchUrl: "/search.php?keyword={{key}}",
+                    enabled: true,
+                    ruleSearch: {
+                        bookList: ".result-list .result-item",
+                        name: ".result-game-item-title a",
+                        author: ".result-game-item-info-tag:eq(0) span",
+                        bookUrl: ".result-game-item-title a@href",
+                        coverUrl: ".result-game-item-pic img@src",
+                        intro: ".result-game-item-desc"
+                    },
+                    ruleBookInfo: {
+                        name: "#info h1",
+                        author: "#info p:eq(0)",
+                        intro: "#intro p",
+                        coverUrl: "#fmimg img@src"
+                    },
+                    ruleToc: {
+                        chapterList: "#list dl dd a",
+                        chapterName: "text",
+                        chapterUrl: "href"
+                    },
+                    ruleContent: {
+                        content: "#content"
+                    }
+                },
+                {
+                    bookSourceName: "贼吧网",
+                    bookSourceUrl: "https://m.zei8.vip",
+                    searchUrl: "/search.php?keyword={{key}}",
+                    enabled: true,
+                    ruleSearch: {
+                        bookList: ".list-item",
+                        name: "a",
+                        bookUrl: "a@href"
+                    }
+                }
+            ];
         }
         
         function saveSources() {
             localStorage.setItem('bookSources', JSON.stringify(bookSources));
             updateSourceCount();
+            updateSourceSelect();
         }
         
         function updateSourceCount() {
             document.getElementById('sourceCount').textContent = bookSources.length;
+        }
+        
+        function updateSourceSelect() {
+            const select = document.getElementById('sourceSelect');
+            select.innerHTML = '<option value="">全部书源</option>';
+            bookSources.forEach((s, i) => {
+                if (s.enabled !== false) {
+                    select.innerHTML += `<option value="${i}">${s.bookSourceName}</option>`;
+                }
+            });
         }
         
         // Toast
@@ -352,6 +697,7 @@
             document.getElementById('searchTab').classList.toggle('hidden', tab !== 'search');
             document.getElementById('sourcesTab').classList.toggle('hidden', tab !== 'sources');
             document.getElementById('historyTab').classList.toggle('hidden', tab !== 'history');
+            document.getElementById('helpTab').classList.toggle('hidden', tab !== 'help');
             if (tab === 'sources') renderSourceList();
             if (tab === 'history') renderHistory();
         }
@@ -361,7 +707,7 @@
         function renderSourceList() {
             const list = document.getElementById('sourceList');
             if (!bookSources.length) {
-                list.innerHTML = '<p style="text-align:center;color:rgba(255,255,255,0.4);padding:20px">暂无书源，请导入</p>';
+                list.innerHTML = '<p class="loading">暂无书源，请导入</p>';
                 return;
             }
             list.innerHTML = bookSources.map((s, i) => `
@@ -370,7 +716,10 @@
                         <div class="name">${s.bookSourceName}</div>
                         <div class="url">${s.bookSourceUrl}</div>
                     </div>
-                    <button class="btn btn-danger btn-small" onclick="deleteSource(${i})">删除</button>
+                    <div class="btn-group">
+                        <button class="btn btn-small ${s.enabled !== false ? 'btn-success' : 'btn-secondary'}" onclick="toggleSource(${i})">${s.enabled !== false ? '✓' : '✗'}</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteSource(${i})">删除</button>
+                    </div>
                 </div>
             `).join('');
         }
@@ -389,14 +738,8 @@
                 
                 sources.forEach(s => {
                     if (s.bookSourceName && s.bookSourceUrl) {
-                        // 检查是否已存在
                         if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) {
-                            bookSources.push({
-                                bookSourceName: s.bookSourceName,
-                                bookSourceUrl: s.bookSourceUrl,
-                                searchUrl: s.searchUrl || '',
-                                enabled: true
-                            });
+                            bookSources.push({ ...s, enabled: true });
                             added++;
                         }
                     }
@@ -423,18 +766,41 @@
             reader.readAsText(file);
         }
         
-        function deleteSource(index) {
-            bookSources.splice(index, 1);
+        async function importFromUrl() {
+            const url = prompt('请输入书源JSON的URL:');
+            if (!url) return;
+            
+            try {
+                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+                const data = await response.json();
+                document.getElementById('sourceInput').value = data.contents;
+                importSources();
+            } catch (e) {
+                showToast('导入失败: ' + e.message, true);
+            }
+        }
+        
+        function toggleSource(index) {
+            bookSources[index].enabled = !bookSources[index].enabled;
             saveSources();
             renderSourceList();
-            showToast('已删除');
+        }
+        
+        function deleteSource(index) {
+            if (confirm('确定删除此书源？')) {
+                bookSources.splice(index, 1);
+                saveSources();
+                renderSourceList();
+                showToast('已删除');
+            }
         }
         
         function loadDefaultSources() {
+            const defaults = getDefaultSources();
             let added = 0;
-            DEFAULT_SOURCES.forEach(s => {
+            defaults.forEach(s => {
                 if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) {
-                    bookSources.push({...s});
+                    bookSources.push({ ...s });
                     added++;
                 }
             });
@@ -467,14 +833,15 @@
             showToast('已清空');
         }
         
-        // ========== 搜索下载 ==========
+        // ========== 搜索 ==========
         
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const keyword = document.getElementById('searchInput').value.trim();
             if (!keyword) return;
             
-            if (!bookSources.length) {
+            const enabledSources = bookSources.filter(s => s.enabled !== false && s.searchUrl);
+            if (!enabledSources.length) {
                 showToast('请先添加书源', true);
                 return;
             }
@@ -485,44 +852,51 @@
             
             searchResults = [];
             
-            // 搜索所有书源
-            for (const source of bookSources) {
-                if (!source.searchUrl) continue;
-                
+            const sourceIdx = document.getElementById('sourceSelect').value;
+            const sourcesToSearch = sourceIdx !== '' ? [enabledSources[parseInt(sourceIdx)]] : enabledSources;
+            
+            for (const source of sourcesToSearch) {
                 try {
-                    const searchUrl = source.searchUrl.replace('{{key}}', encodeURIComponent(keyword));
-                    const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`);
-                    const data = await response.json();
-                    const html = data.contents;
+                    const searchUrl = source.searchUrl
+                        .replace('{{key}}', encodeURIComponent(keyword))
+                        .replace('{{page}}', '1');
                     
-                    // 解析搜索结果
-                    const linkPattern = /<a[^>]*href="([^"]*)"[^>]*>([^<]{2,50})<\/a>/g;
-                    let match;
+                    const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
                     
-                    while ((match = linkPattern.exec(html)) !== null) {
-                        const url = match[1];
-                        const name = match[2].trim();
-                        
-                        if (name && !searchResults.some(r => r.name === name && r.source === source.bookSourceName)) {
-                            // 过滤非书籍链接
-                            if (url.includes('txt') || url.includes('book') || url.includes('novel') || url.includes('/\d+')) {
-                                const fullUrl = url.startsWith('http') ? url : source.bookSourceUrl + url;
-                                searchResults.push({
-                                    name: name,
-                                    author: '',
-                                    source: source.bookSourceName,
-                                    url: fullUrl
-                                });
+                    const html = await fetchHtml(fullUrl);
+                    const parser = new RuleParser(html);
+                    
+                    const rules = source.ruleSearch || {};
+                    const items = parser.getList(rules.bookList, {
+                        name: rules.name || 'a',
+                        author: rules.author || '',
+                        bookUrl: rules.bookUrl || 'a@href',
+                        coverUrl: rules.coverUrl || '',
+                        intro: rules.intro || ''
+                    });
+                    
+                    items.forEach(item => {
+                        if (item.name && item.bookUrl) {
+                            // 处理相对URL
+                            if (!item.bookUrl.startsWith('http')) {
+                                item.bookUrl = source.bookSourceUrl + item.bookUrl;
                             }
+                            if (item.coverUrl && !item.coverUrl.startsWith('http')) {
+                                item.coverUrl = source.bookSourceUrl + item.coverUrl;
+                            }
+                            item.sourceName = source.bookSourceName;
+                            item.sourceUrl = source.bookSourceUrl;
+                            item.source = source;
+                            searchResults.push(item);
                         }
-                    }
+                    });
                 } catch (err) {
                     console.error(`搜索 ${source.bookSourceName} 失败:`, err);
                 }
             }
             
             if (searchResults.length > 0) {
-                displayResults(searchResults.slice(0, 20));
+                displayResults(searchResults.slice(0, 30));
                 showToast(`找到 ${searchResults.length} 个结果`);
             } else {
                 showToast('未找到结果', true);
@@ -539,145 +913,164 @@
             list.innerHTML = results.map((book, i) => `
                 <div class="book-item" onclick="selectBook(${i})">
                     <h3>《${book.name}》</h3>
-                    <div class="meta">来源: ${book.source}</div>
+                    <div class="meta">${book.author ? '作者: ' + book.author + ' | ' : ''}来源: ${book.sourceName}</div>
+                    ${book.intro ? `<div class="intro">${book.intro}</div>` : ''}
                 </div>
             `).join('');
             
             document.getElementById('resultsCard').classList.remove('hidden');
+            document.getElementById('bookInfoCard').classList.add('hidden');
             document.getElementById('downloadCard').classList.add('hidden');
         }
         
-        function selectBook(index) {
+        async function selectBook(index) {
             document.querySelectorAll('.book-item').forEach((item, i) => {
                 item.classList.toggle('selected', i === index);
             });
             selectedBook = searchResults[index];
+            selectedSource = selectedBook.source;
             
-            document.getElementById('downloadInfo').innerHTML = `
+            document.getElementById('bookInfo').innerHTML = `
                 <h3>《${selectedBook.name}》</h3>
-                <p style="color:rgba(255,255,255,0.6);margin-top:5px">来源: ${selectedBook.source}</p>
-                <button class="btn" id="downloadBtn" style="margin-top:15px" onclick="startDownload()">📥 开始下载</button>
+                <p style="color:rgba(255,255,255,0.6);margin-top:4px">${selectedBook.author ? '作者: ' + selectedBook.author + ' | ' : ''}来源: ${selectedBook.sourceName}</p>
+                <div class="loading" id="bookLoading">正在获取书籍信息...</div>
             `;
-            document.getElementById('downloadCard').classList.remove('hidden');
-            document.getElementById('progressSection').classList.add('hidden');
-            document.getElementById('saveActions').classList.add('hidden');
+            
+            document.getElementById('bookInfoCard').classList.remove('hidden');
+            document.getElementById('chapterListSection').classList.add('hidden');
+            document.getElementById('downloadActions').classList.add('hidden');
+            
+            // 获取书籍详情和目录
+            try {
+                const html = await fetchHtml(selectedBook.bookUrl);
+                const parser = new RuleParser(html);
+                
+                // 解析书籍信息
+                const infoRules = selectedSource.ruleBookInfo || {};
+                const bookInfo = {
+                    name: parser.getString(infoRules.name) || selectedBook.name,
+                    author: parser.getString(infoRules.author) || selectedBook.author,
+                    intro: parser.getString(infoRules.intro) || '',
+                    coverUrl: parser.getString(infoRules.coverUrl) || selectedBook.coverUrl
+                };
+                
+                // 解析目录
+                const tocRules = selectedSource.ruleToc || {};
+                chapters = parser.getList(tocRules.chapterList, {
+                    name: tocRules.chapterName || 'text',
+                    url: tocRules.chapterUrl || 'href'
+                });
+                
+                // 处理章节URL
+                chapters = chapters.map(ch => ({
+                    name: ch.name,
+                    url: ch.url.startsWith('http') ? ch.url : selectedSource.bookSourceUrl + ch.url,
+                    selected: false
+                }));
+                
+                document.getElementById('bookLoading').classList.add('hidden');
+                
+                document.getElementById('bookInfo').innerHTML = `
+                    <h3>《${bookInfo.name}》</h3>
+                    <p style="color:rgba(255,255,255,0.6);margin-top:4px">${bookInfo.author ? '作者: ' + bookInfo.author : ''}</p>
+                    ${bookInfo.intro ? `<p style="color:rgba(255,255,255,0.5);margin-top:8px;font-size:0.85rem">${bookInfo.intro.substring(0, 200)}...</p>` : ''}
+                `;
+                
+                if (chapters.length > 0) {
+                    document.getElementById('chapterCount').textContent = `(${chapters.length})`;
+                    document.getElementById('chapterList').innerHTML = chapters.map((ch, i) => `
+                        <div class="chapter-item" onclick="toggleChapter(${i})" id="ch${i}">
+                            ${ch.name}
+                        </div>
+                    `).join('');
+                    document.getElementById('chapterListSection').classList.remove('hidden');
+                    document.getElementById('downloadActions').classList.remove('hidden');
+                } else {
+                    showToast('未找到章节列表', true);
+                }
+                
+            } catch (err) {
+                document.getElementById('bookLoading').textContent = '获取失败: ' + err.message;
+                showToast('获取书籍信息失败', true);
+            }
         }
         
-        // 下载
-        async function startDownload() {
-            if (!selectedBook) return;
-            
-            document.getElementById('progressSection').classList.remove('hidden');
-            document.getElementById('progressFill').style.width = '0%';
-            document.getElementById('progressText').textContent = '正在获取书籍信息...';
+        function toggleChapter(index) {
+            chapters[index].selected = !chapters[index].selected;
+            document.getElementById('ch' + index).style.background = chapters[index].selected ? 'rgba(233, 69, 96, 0.3)' : '';
+        }
+        
+        // ========== 下载 ==========
+        
+        async function downloadSelected() {
+            const selected = chapters.filter(ch => ch.selected);
+            if (!selected.length) {
+                showToast('请先选择章节', true);
+                return;
+            }
+            await downloadChapters(selected);
+        }
+        
+        async function downloadAll() {
+            const toDownload = chapters.slice(0, 200); // 限制200章
+            await downloadChapters(toDownload);
+        }
+        
+        async function downloadChapters(chaptersToDownload) {
+            document.getElementById('downloadCard').classList.remove('hidden');
+            document.getElementById('downloadProgressFill').style.width = '0%';
+            document.getElementById('downloadProgressText').textContent = '准备下载...';
+            document.getElementById('saveActions').classList.add('hidden');
             downloadedContent = '';
             
-            try {
-                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(selectedBook.url)}`);
-                const data = await response.json();
-                const html = data.contents;
+            const contentRule = selectedSource.ruleContent?.content || '#content';
+            
+            downloadedContent = `书名: ${selectedBook.name}\n作者: ${selectedBook.author || '未知'}\n来源: ${selectedBook.sourceName}\n下载时间: ${new Date().toLocaleString()}\n\n${'='.repeat(40)}\n\n`;
+            
+            let success = 0;
+            let fail = 0;
+            
+            for (let i = 0; i < chaptersToDownload.length; i++) {
+                const ch = chaptersToDownload[i];
                 
-                // 查找下载链接
-                const zipPattern = /href="(https?:\/\/[^"]+\.zip)"/i;
-                const txtPattern = /href="(https?:\/\/[^"]+\.txt)"/i;
-                
-                let downloadUrl = html.match(zipPattern)?.[1] || html.match(txtPattern)?.[1];
-                
-                if (downloadUrl) {
-                    document.getElementById('progressText').textContent = '找到下载链接，正在下载...';
-                    document.getElementById('progressFill').style.width = '30%';
-                    
-                    const fileResponse = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(downloadUrl)}`);
-                    const blob = await fileResponse.blob();
-                    
-                    document.getElementById('progressFill').style.width = '60%';
-                    
-                    if (downloadUrl.endsWith('.zip')) {
-                        document.getElementById('progressText').textContent = '正在解压...';
-                        
-                        // 加载JSZip
-                        if (typeof JSZip === 'undefined') {
-                            const script = document.createElement('script');
-                            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-                            document.head.appendChild(script);
-                            await new Promise(resolve => script.onload = resolve);
-                        }
-                        
-                        const zip = await JSZip.loadAsync(blob);
-                        const files = Object.keys(zip.files);
-                        const txtFile = files.find(f => f.endsWith('.txt'));
-                        
-                        if (txtFile) {
-                            let content = await zip.file(txtFile).async('uint8array');
-                            const decoder = new TextDecoder('gbk');
-                            downloadedContent = decoder.decode(content);
-                        } else {
-                            throw new Error('ZIP中没有TXT文件');
-                        }
-                    } else {
-                        downloadedContent = await blob.text();
-                    }
-                    
-                    document.getElementById('progressFill').style.width = '100%';
-                    document.getElementById('progressText').textContent = '下载完成！';
-                    document.getElementById('saveActions').classList.remove('hidden');
-                    
-                    saveToHistory();
-                    showToast('下载完成！');
-                } else {
-                    // 尝试解析章节
-                    document.getElementById('progressText').textContent = '正在解析章节...';
-                    await downloadByChapters(html);
-                }
-            } catch (err) {
-                document.getElementById('progressText').textContent = '错误: ' + err.message;
-                showToast('下载失败: ' + err.message, true);
-            }
-        }
-        
-        async function downloadByChapters(html) {
-            // 解析章节列表
-            const chapterPattern = /<a[^>]*href="([^"]+)"[^>]*>(第[^<]+)<\/a>/g;
-            const chapters = [];
-            let match;
-            
-            while ((match = chapterPattern.exec(html)) !== null) {
-                chapters.push({
-                    url: match[1].startsWith('http') ? match[1] : selectedBook.url.match(/https?:\/\/[^\/]+/)[0] + match[1],
-                    title: match[2]
-                });
-            }
-            
-            if (!chapters.length) {
-                throw new Error('未找到章节');
-            }
-            
-            downloadedContent = `书名: ${selectedBook.name}\n来源: ${selectedBook.source}\n\n`;
-            
-            const total = Math.min(chapters.length, 100); // 最多100章
-            
-            for (let i = 0; i < total; i++) {
                 try {
-                    const resp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(chapters[i].url)}`);
-                    const data = await resp.json();
-                    const contentMatch = data.contents.match(/<div[^>]*id="content"[^>]*>([\s\S]*?)<\/div>/i);
+                    document.getElementById('downloadProgressText').textContent = `下载中: ${ch.name} (${i + 1}/${chaptersToDownload.length})`;
                     
-                    if (contentMatch) {
-                        let content = contentMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
-                        downloadedContent += `\n${chapters[i].title}\n\n${content}\n\n`;
+                    const html = await fetchHtml(ch.url);
+                    const parser = new RuleParser(html);
+                    let content = parser.getString(contentRule);
+                    
+                    if (content) {
+                        // 清理内容
+                        content = content.replace(/&nbsp;/g, ' ')
+                                        .replace(/<br\s*\/?>/gi, '\n')
+                                        .replace(/<[^>]+>/g, '')
+                                        .replace(/\s+/g, ' ')
+                                        .trim();
+                        
+                        downloadedContent += `第${i + 1}章 ${ch.name}\n\n${content}\n\n`;
+                        success++;
+                    } else {
+                        fail++;
                     }
-                    
-                    document.getElementById('progressFill').style.width = `${Math.round((i + 1) / total * 100)}%`;
-                    document.getElementById('progressText').textContent = `下载中: ${i + 1}/${total}`;
-                } catch (e) {}
+                } catch (e) {
+                    fail++;
+                }
+                
+                const progress = Math.round((i + 1) / chaptersToDownload.length * 100);
+                document.getElementById('downloadProgressFill').style.width = progress + '%';
+                
+                // 延迟避免请求过快
+                await new Promise(r => setTimeout(r, 300));
             }
             
+            document.getElementById('downloadProgressText').textContent = `下载完成！成功: ${success}, 失败: ${fail}`;
             document.getElementById('saveActions').classList.remove('hidden');
+            
             saveToHistory();
             showToast('下载完成！');
         }
         
-        // 保存到本地
         function saveToFile() {
             if (!downloadedContent) return showToast('没有内容', true);
             
@@ -691,7 +1084,6 @@
             showToast('文件已保存！');
         }
         
-        // 复制
         async function copyToClipboard() {
             if (!downloadedContent) return showToast('没有内容', true);
             try {
@@ -708,7 +1100,8 @@
             const item = {
                 id: Date.now(),
                 name: selectedBook.name,
-                source: selectedBook.source,
+                author: selectedBook.author,
+                source: selectedBook.sourceName,
                 content: downloadedContent.substring(0, 500000),
                 date: new Date().toLocaleString(),
                 size: (downloadedContent.length / 1024).toFixed(1) + ' KB'
@@ -721,14 +1114,14 @@
         function renderHistory() {
             const list = document.getElementById('historyList');
             if (!downloadHistory.length) {
-                list.innerHTML = '<p style="text-align:center;color:rgba(255,255,255,0.4);padding:20px">暂无记录</p>';
+                list.innerHTML = '<p class="loading">暂无记录</p>';
                 return;
             }
             list.innerHTML = downloadHistory.map(item => `
                 <div class="history-item">
                     <div class="history-info">
                         <h4>《${item.name}》</h4>
-                        <p>${item.size} | ${item.date}</p>
+                        <p>${item.author || ''} | ${item.size} | ${item.date}</p>
                     </div>
                     <button class="btn btn-small" onclick="downloadHistoryItem(${item.id})">保存</button>
                 </div>
@@ -756,8 +1149,7 @@
         }
         
         // 初始化
-        initSources();
-        renderHistory();
+        init();
     </script>
 </body>
 </html>
