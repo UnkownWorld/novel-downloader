@@ -39,6 +39,7 @@ jobs:
           const fs = require('fs');
           const https = require('https');
           const http = require('http');
+          const { URL } = require('url');
           
           // 从各种格式中提取书源数组
           function extractBookSources(data) {
@@ -73,44 +74,80 @@ jobs:
             return [];
           }
           
-          // 测试URL是否可访问
-          function testUrl(url, timeout = 10000) {
+          // 测试URL是否可访问（支持重定向）
+          function testUrl(urlString, timeout = 15000, maxRedirects = 5) {
             return new Promise((resolve) => {
-              if (!url) {
+              if (!urlString) {
                 resolve({ success: false, error: 'URL为空' });
                 return;
               }
               
-              const protocol = url.startsWith('https') ? https : http;
-              const timer = setTimeout(() => {
-                resolve({ success: false, error: '超时' });
-              }, timeout);
+              let redirectCount = 0;
               
-              try {
-                const req = protocol.get(url, (res) => {
-                  clearTimeout(timer);
-                  if (res.statusCode >= 200 && res.statusCode < 400) {
-                    resolve({ success: true });
-                  } else if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    // 跟随重定向
-                    testUrl(res.headers.location, timeout).then(resolve);
-                  } else {
-                    resolve({ success: false, error: `状态码: ${res.statusCode}` });
-                  }
-                });
+              const makeRequest = (currentUrl) => {
+                if (redirectCount >= maxRedirects) {
+                  resolve({ success: false, error: '重定向次数过多' });
+                  return;
+                }
                 
-                req.on('error', (e) => {
+                let parsedUrl;
+                try {
+                  parsedUrl = new URL(currentUrl);
+                } catch (e) {
+                  resolve({ success: false, error: 'URL格式错误' });
+                  return;
+                }
+                
+                const protocol = parsedUrl.protocol === 'https:' ? https : http;
+                const timer = setTimeout(() => {
+                  resolve({ success: false, error: '超时' });
+                }, timeout);
+                
+                try {
+                  const req = protocol.get(currentUrl, {
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    }
+                  }, (res) => {
+                    clearTimeout(timer);
+                    
+                    // 处理重定向
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                      redirectCount++;
+                      // 处理相对路径重定向
+                      let location = res.headers.location;
+                      if (location.startsWith('/')) {
+                        location = `${parsedUrl.protocol}//${parsedUrl.host}${location}`;
+                      } else if (!location.startsWith('http')) {
+                        location = `${parsedUrl.protocol}//${parsedUrl.host}/${location}`;
+                      }
+                      makeRequest(location);
+                      return;
+                    }
+                    
+                    // 成功响应
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                      resolve({ success: true });
+                    } else {
+                      resolve({ success: false, error: `状态码: ${res.statusCode}` });
+                    }
+                  });
+                  
+                  req.on('error', (e) => {
+                    clearTimeout(timer);
+                    resolve({ success: false, error: e.message });
+                  });
+                } catch (e) {
                   clearTimeout(timer);
                   resolve({ success: false, error: e.message });
-                });
-              } catch (e) {
-                clearTimeout(timer);
-                resolve({ success: false, error: e.message });
-              }
+                }
+              };
+              
+              makeRequest(urlString);
             });
           }
           
-          // 测试书源
+          // 测试书源（简化版：只测试首页）
           async function testSource(source) {
             const result = {
               source,
@@ -118,25 +155,16 @@ jobs:
               error: ''
             };
             
-            // 测试首页
-            const homeResult = await testUrl(source.bookSourceUrl, 10000);
-            if (!homeResult.success) {
-              result.error = `首页无法访问: ${homeResult.error}`;
+            if (!source.bookSourceUrl) {
+              result.error = '书源URL为空';
               return result;
             }
             
-            // 如果有搜索URL，测试搜索功能
-            if (source.searchUrl) {
-              const searchUrl = source.searchUrl
-                .replace('{{key}}', encodeURIComponent('斗罗'))
-                .replace('{{page}}', '1');
-              const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
-              
-              const searchResult = await testUrl(fullUrl, 10000);
-              if (!searchResult.success) {
-                result.error = `搜索无法访问: ${searchResult.error}`;
-                return result;
-              }
+            // 只测试首页是否可访问
+            const homeResult = await testUrl(source.bookSourceUrl, 15000);
+            if (!homeResult.success) {
+              result.error = `首页无法访问: ${homeResult.error}`;
+              return result;
             }
             
             result.valid = true;
@@ -144,7 +172,14 @@ jobs:
           }
           
           async function main() {
-            const rawData = JSON.parse(fs.readFileSync('sources_raw.json', 'utf8'));
+            let rawData;
+            try {
+              rawData = JSON.parse(fs.readFileSync('sources_raw.json', 'utf8'));
+            } catch (e) {
+              console.error('解析JSON失败:', e.message);
+              process.exit(1);
+            }
+            
             const sources = extractBookSources(rawData);
             
             console.log(`📊 总书源数: ${sources.length}`);
@@ -152,8 +187,8 @@ jobs:
             const validSources = [];
             const invalidSources = [];
             
-            // 并发测试，每次5个
-            const batchSize = 5;
+            // 并发测试，每次10个
+            const batchSize = 10;
             for (let i = 0; i < sources.length; i += batchSize) {
               const batch = sources.slice(i, i + batchSize);
               const results = await Promise.all(batch.map(testSource));
@@ -164,25 +199,31 @@ jobs:
                 } else {
                   invalidSources.push({
                     name: r.source.bookSourceName,
+                    url: r.source.bookSourceUrl,
                     error: r.error
                   });
                 }
               }
               
-              console.log(`⏳ 进度: ${Math.min(i + batchSize, sources.length)}/${sources.length}`);
+              const progress = Math.min(i + batchSize, sources.length);
+              console.log(`⏳ 进度: ${progress}/${sources.length} | 有效: ${validSources.length} | 失效: ${invalidSources.length}`);
             }
             
-            console.log(`\n✅ 有效书源: ${validSources.length}`);
+            console.log(`\n========================================`);
+            console.log(`✅ 有效书源: ${validSources.length}`);
             console.log(`❌ 失效书源: ${invalidSources.length}`);
+            console.log(`========================================\n`);
             
-            // 输出失效书源列表（前20个）
+            // 输出失效书源列表（前30个）
             if (invalidSources.length > 0) {
-              console.log('\n失效书源列表:');
-              invalidSources.slice(0, 20).forEach(s => {
-                console.log(`  - ${s.name}: ${s.error}`);
+              console.log('失效书源列表:');
+              invalidSources.slice(0, 30).forEach((s, i) => {
+                console.log(`  ${i+1}. ${s.name}`);
+                console.log(`     URL: ${s.url}`);
+                console.log(`     原因: ${s.error}`);
               });
-              if (invalidSources.length > 20) {
-                console.log(`  ... 还有 ${invalidSources.length - 20} 个`);
+              if (invalidSources.length > 30) {
+                console.log(`  ... 还有 ${invalidSources.length - 30} 个失效书源`);
               }
             }
             
@@ -208,7 +249,7 @@ jobs:
           echo ""
           echo "🧪 开始测试书源有效性..."
           node test_sources.js
-          
+      
       - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
