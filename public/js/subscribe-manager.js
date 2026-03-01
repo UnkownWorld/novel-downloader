@@ -67,10 +67,15 @@ class SubscribeManager {
         
         // 立即获取一次
         const result = await this.fetchSubscription(url);
+        
+        console.log('fetchSubscription result:', result);
+        
         if (result.success) {
             subscription.sourceCount = result.sources.length;
             subscription.lastUpdateTime = Date.now();
             subscription.name = result.name || subscription.name;
+        } else {
+            console.error('fetchSubscription failed:', result.error);
         }
         
         this.subscriptions.push(subscription);
@@ -79,7 +84,8 @@ class SubscribeManager {
         return {
             success: true,
             subscription: subscription,
-            sources: result.success ? result.sources : []
+            sources: result.success ? result.sources : [],
+            error: result.success ? null : result.error
         };
     }
     
@@ -106,6 +112,8 @@ class SubscribeManager {
         }
         
         const result = await this.fetchSubscription(subscription.url);
+        
+        console.log('updateSubscription fetchSubscription result:', result);
         
         if (result.success) {
             subscription.sourceCount = result.sources.length;
@@ -141,8 +149,16 @@ class SubscribeManager {
      */
     async fetchSubscription(url) {
         try {
-            const response = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
+            console.log('fetchSubscription url:', url);
+            
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+            console.log('proxy url:', proxyUrl);
+            
+            const response = await fetch(proxyUrl);
+            console.log('response status:', response.status);
+            
             const data = await response.json();
+            console.log('proxy response data:', data);
             
             if (!data.success) {
                 return { success: false, error: data.error || '请求失败' };
@@ -153,14 +169,22 @@ class SubscribeManager {
             try {
                 let content = data.body;
                 
+                console.log('content type:', typeof content);
+                console.log('content length:', content ? content.length : 0);
+                console.log('content preview:', content ? content.substring(0, 200) : '(empty)');
+                
                 // 处理可能的JSONP
-                if (content.startsWith('(')) {
+                if (content && content.startsWith('(')) {
                     content = content.replace(/^\(|\)$/g, '');
                 }
                 
                 sources = JSON.parse(content);
+                console.log('parsed sources count:', Array.isArray(sources) ? sources.length : 1);
+                
             } catch (e) {
-                return { success: false, error: '解析书源失败' };
+                console.error('解析书源失败:', e);
+                console.error('content that failed to parse:', data.body ? data.body.substring(0, 500) : '(empty)');
+                return { success: false, error: '解析书源失败: ' + e.message };
             }
             
             if (!Array.isArray(sources)) {
@@ -173,6 +197,8 @@ class SubscribeManager {
                 name = sources[0].bookSourceGroup;
             }
             
+            console.log('fetchSubscription success, sources:', sources.length);
+            
             return {
                 success: true,
                 sources: sources,
@@ -181,6 +207,7 @@ class SubscribeManager {
             };
             
         } catch (e) {
+            console.error('fetchSubscription error:', e);
             return { success: false, error: e.message };
         }
     }

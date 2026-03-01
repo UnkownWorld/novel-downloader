@@ -1458,11 +1458,22 @@ class App {
         this.showToast('正在获取订阅...');
         
         try {
+            console.log('添加订阅:', url);
+            
             const result = await this.subscribeManager.addSubscription(url);
+            
+            console.log('订阅结果:', result);
             
             if (result.success) {
                 if (result.sources && result.sources.length > 0) {
+                    console.log(`获取到 ${result.sources.length} 个书源，正在添加...`);
+                    
                     const addResult = await this.sourceManager.addSources(result.sources);
+                    
+                    console.log('添加结果:', addResult);
+                    
+                    // 强制保存
+                    this.sourceManager.saveSources();
                     
                     this.showToast(`订阅成功！导入 ${result.sources.length} 个书源（新增 ${addResult.added}，更新 ${addResult.updated}）`);
                     
@@ -1473,6 +1484,7 @@ class App {
                     this.render();
                 } else {
                     this.showToast('订阅成功，但没有获取到书源', true);
+                    console.warn('没有获取到书源:', result);
                 }
             } else {
                 throw new Error(result.error || '订阅失败');
@@ -1485,11 +1497,18 @@ class App {
     
     async refreshSubscription(id) {
         try {
+            console.log('刷新订阅:', id);
+            
             const result = await this.subscribeManager.updateSubscription(id);
+            
+            console.log('刷新结果:', result);
             
             if (result.success) {
                 if (result.sources && result.sources.length > 0) {
                     const addResult = await this.sourceManager.addSources(result.sources);
+                    
+                    // 强制保存
+                    this.sourceManager.saveSources();
                     
                     this.showToast(`刷新成功！更新 ${result.sources.length} 个书源（新增 ${addResult.added}，更新 ${addResult.updated}）`);
                     
@@ -1510,6 +1529,7 @@ class App {
         }
     }
     
+                    // 立即刷新所有相关界面
     
     async syncAllSubscriptions() {
         const subscriptions = this.subscribeManager.getAllSubscriptions();
@@ -1523,20 +1543,41 @@ class App {
         
         let totalAdded = 0;
         let totalUpdated = 0;
+        let failedCount = 0;
+        let errorMessages = [];
         
         for (const sub of subscriptions) {
             try {
+                console.log(`正在同步订阅: ${sub.name} (${sub.url})`);
+                
                 const result = await this.subscribeManager.updateSubscription(sub.id);
                 
+                console.log(`订阅 ${sub.name} 结果:`, result);
+                
                 if (result.success && result.sources && result.sources.length > 0) {
+                    console.log(`获取到 ${result.sources.length} 个书源`);
+                    
                     const addResult = await this.sourceManager.addSources(result.sources);
-                    totalAdded += addResult.added;
-                    totalUpdated += addResult.updated;
+                    console.log(`添加结果:`, addResult);
+                    
+                    totalAdded += addResult.added || 0;
+                    totalUpdated += addResult.updated || 0;
+                } else if (result.error) {
+                    failedCount++;
+                    errorMessages.push(`${sub.name}: ${result.error}`);
+                    console.error(`订阅 ${sub.name} 失败:`, result.error);
+                } else {
+                    console.warn(`订阅 ${sub.name} 没有获取到书源`);
                 }
             } catch (e) {
-                console.error(`同步订阅 ${sub.name} 失败:`, e);
+                failedCount++;
+                errorMessages.push(`${sub.name}: ${e.message}`);
+                console.error(`同步订阅 ${sub.name} 异常:`, e);
             }
         }
+        
+        // 强制保存
+        this.sourceManager.saveSources();
         
         // 刷新界面
         this.renderSourceList();
@@ -1544,7 +1585,17 @@ class App {
         this.updateStats();
         this.render();
         
-        this.showToast(`同步完成！新增 ${totalAdded} 个，更新 ${totalUpdated} 个书源`);
+        // 显示结果
+        let message = `同步完成！新增 ${totalAdded} 个，更新 ${totalUpdated} 个书源`;
+        if (failedCount > 0) {
+            message += `，失败 ${failedCount} 个`;
+        }
+        this.showToast(message);
+        
+        // 如果有错误，在控制台显示详情
+        if (errorMessages.length > 0) {
+            console.error('同步错误详情:', errorMessages);
+        }
     }
     
     clearAllData() {
