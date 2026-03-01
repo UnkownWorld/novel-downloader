@@ -2011,6 +2011,10 @@ App.prototype.debugChapter = async function() {
 App.prototype.showDebugChapter = function(chapter, contentData, parseResult) {
     const modalContent = document.getElementById('bookModalContent');
     
+    // 尝试检测常见的内容选择器
+    const htmlContent = contentData.html || '';
+    const suggestedSelectors = this.detectContentSelectors(htmlContent);
+    
     let html = `
         <div class="debug-chapter">
             <h3>🔍 章节调试</h3>
@@ -2028,7 +2032,7 @@ App.prototype.showDebugChapter = function(chapter, contentData, parseResult) {
             </div>
             
             <div class="debug-section">
-                <h4>解析规则</h4>
+                <h4>当前规则</h4>
                 <p>内容选择器: <code>${this.escapeHtml(this.currentSource.ruleContent?.content || '未设置')}</code></p>
             </div>
             
@@ -2044,6 +2048,16 @@ App.prototype.showDebugChapter = function(chapter, contentData, parseResult) {
                 ` : ''}
             </div>
             
+            ${suggestedSelectors.length > 0 ? `
+                <div class="debug-section">
+                    <h4>💡 建议的选择器</h4>
+                    <p>检测到可能的内容区域：</p>
+                    <ul>
+                        ${suggestedSelectors.map(s => `<li><code>${s}</code></li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
+            
             <div class="debug-section">
                 <h4>解析出的内容 (前500字)</h4>
                 <div class="debug-content">
@@ -2052,14 +2066,15 @@ App.prototype.showDebugChapter = function(chapter, contentData, parseResult) {
             </div>
             
             <div class="debug-section">
-                <h4>原始HTML (前1000字)</h4>
+                <h4>原始HTML (前2000字)</h4>
                 <div class="debug-html">
-                    ${this.escapeHtml(contentData.html?.substring(0, 1000) || '(空)')}
+                    ${this.escapeHtml(htmlContent.substring(0, 2000) || '(空)')}
                 </div>
             </div>
             
             <div class="debug-actions">
                 <button class="btn btn-secondary" onclick="app.showBookDetail(app.currentBook)">返回</button>
+                <button class="btn btn-secondary" onclick="app.showFullHtml()">查看完整HTML</button>
                 <button class="btn btn-primary" onclick="app.copyDebugInfo()">复制调试信息</button>
             </div>
         </div>
@@ -2074,6 +2089,69 @@ App.prototype.showDebugChapter = function(chapter, contentData, parseResult) {
         parseResult: parseResult,
         rule: this.currentSource.ruleContent
     };
+};
+
+/**
+ * 检测常见的内容选择器
+ */
+App.prototype.detectContentSelectors = function(html) {
+    const selectors = [];
+    
+    // 常见的内容容器ID
+    const contentIds = ['content', 'chaptercontent', 'chapter-content', 'article', 'novelcontent', 'BookText'];
+    for (const id of contentIds) {
+        if (html.includes(`id="${id}"`) || html.includes(`id='${id}'`)) {
+            selectors.push(`#${id}@html`);
+        }
+    }
+    
+    // 常见的内容容器class
+    const contentClasses = ['content', 'chapter-content', 'novelcontent', 'article-content', 'read-content'];
+    for (const cls of contentClasses) {
+        if (html.includes(`class="${cls}"`) || html.includes(`class='${cls}'`)) {
+            selectors.push(`.${cls}@html`);
+        }
+    }
+    
+    return [...new Set(selectors)]; // 去重
+};
+
+/**
+ * 显示完整HTML
+ */
+App.prototype.showFullHtml = function() {
+    if (!this.lastDebugData) return;
+    
+    const modalContent = document.getElementById('bookModalContent');
+    const html = this.lastDebugData.contentData.html || '';
+    
+    modalContent.innerHTML = `
+        <div class="debug-chapter">
+            <h3>📄 完整HTML</h3>
+            <p>长度: ${html.length} 字符</p>
+            <div class="debug-html" style="max-height: 70vh;">
+                ${this.escapeHtml(html)}
+            </div>
+            <div class="debug-actions">
+                <button class="btn btn-secondary" onclick="app.debugChapter()">返回调试</button>
+                <button class="btn btn-primary" onclick="app.copyFullHtml()">复制HTML</button>
+            </div>
+        </div>
+    `;
+};
+
+/**
+ * 复制完整HTML
+ */
+App.prototype.copyFullHtml = function() {
+    if (!this.lastDebugData) return;
+    
+    const html = this.lastDebugData.contentData.html || '';
+    navigator.clipboard.writeText(html).then(() => {
+        this.showToast('已复制HTML到剪贴板');
+    }).catch(() => {
+        this.showToast('复制失败', true);
+    });
 };
 
 /**
