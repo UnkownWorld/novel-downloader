@@ -220,6 +220,7 @@
         <div class="tabs">
             <button class="tab active" onclick="showTab('search')">🔍 搜索下载</button>
             <button class="tab" onclick="showTab('sources')">📚 书源管理</button>
+            <button class="tab" onclick="showTab('subscribe')">📡 订阅</button>
             <button class="tab" onclick="showTab('history')">📁 历史</button>
         </div>
         
@@ -792,16 +793,21 @@
         let downloadedContent = '';
         let downloadHistory = [];
         let lastUpdateTime = null;
+        let subscribeList = [];  // 订阅列表
         
         // 初始化
         async function init() {
             // 加载历史
             downloadHistory = Storage.get('downloadHistory', []);
             
+            // 加载订阅列表
+            subscribeList = Storage.get('subscribeList', []);
+            
             // 尝试从服务器加载书源
             await loadOnlineSources();
             
             renderHistory();
+            renderSubscribeList();
         }
         
         // 从服务器加载书源
@@ -966,8 +972,10 @@
             event.target.classList.add('active');
             document.getElementById('searchTab').classList.toggle('hidden', tab !== 'search');
             document.getElementById('sourcesTab').classList.toggle('hidden', tab !== 'sources');
+            document.getElementById('subscribeTab').classList.toggle('hidden', tab !== 'subscribe');
             document.getElementById('historyTab').classList.toggle('hidden', tab !== 'history');
             if (tab === 'sources') renderSourceList();
+            if (tab === 'subscribe') renderSubscribeList();
             if (tab === 'history') renderHistory();
         }
         
@@ -1925,6 +1933,238 @@
             Storage.set('downloadHistory', []);
             renderHistory();
             showToast('已清空');
+        }
+        
+        // ========== 订阅管理 ==========
+        
+        // 渲染订阅列表
+        function renderSubscribeList() {
+            const list = document.getElementById('subscribeList');
+            if (!subscribeList || subscribeList.length === 0) {
+                list.innerHTML = '<p class="loading">暂无订阅</p>';
+                return;
+            }
+            
+            list.innerHTML = subscribeList.map((sub, i) => `
+                <div class="source-item">
+                    <div style="flex:1">
+                        <div class="name">${sub.name || '未命名合集'}</div>
+                        <div class="url">${sub.url}</div>
+                        <div style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:2px">
+                            ${sub.sourceCount || '?'} 个书源 | 
+                            更新: ${sub.lastUpdate ? new Date(sub.lastUpdate).toLocaleDateString() : '未更新'}
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-small" onclick="refreshSubscribe(${i})">🔄</button>
+                        <button class="btn btn-danger btn-small" onclick="removeSubscribe(${i})">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 添加订阅
+        async function addSubscribe() {
+            const input = document.getElementById('subscribeUrlInput');
+            const url = input.value.trim();
+            
+            if (!url) {
+                showToast('请输入订阅URL', true);
+                return;
+            }
+            
+            // 检查是否已订阅
+            if (subscribeList.some(s => s.url === url)) {
+                showToast('该URL已订阅', true);
+                return;
+            }
+            
+            showToast('正在获取订阅...');
+            
+            try {
+                const result = await fetchHtml(url);
+                if (!result.success) {
+                    showToast('获取订阅失败', true);
+                    return;
+                }
+                
+                const data = JSON.parse(result.content);
+                const sources = extractBookSources(data);
+                
+                if (sources.length === 0) {
+                    showToast('未找到有效书源', true);
+                    return;
+                }
+                
+                // 添加到订阅列表
+                const subscribe = {
+                    url: url,
+                    name: `书源合集 (${sources.length}个)`,
+                    sourceCount: sources.length,
+                    lastUpdate: Date.now(),
+                    sources: sources
+                };
+                
+                subscribeList.push(subscribe);
+                Storage.set('subscribeList', subscribeList);
+                
+                // 导入书源
+                let added = 0, updated = 0;
+                sources.forEach(s => {
+                    if (!s.bookSourceName || !s.bookSourceUrl) return;
+                    const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
+                    if (existingIndex >= 0) {
+                        bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: s.enabled !== false };
+                        updated++;
+                    } else {
+                        bookSources.push({ ...s, enabled: s.enabled !== false });
+                        added++;
+                    }
+                });
+                
+                Storage.set('bookSources', bookSources);
+                updateSourceCount();
+                updateSourceSelect();
+                renderSourceList();
+                renderSubscribeList();
+                
+                input.value = '';
+                showToast(`订阅成功！新增 ${added} 个，更新 ${updated} 个书源`);
+                
+            } catch (e) {
+                showToast('订阅失败: ' + e.message, true);
+            }
+        }
+        
+        // 快速订阅（从推荐列表）
+        async function quickSubscribe(url) {
+            document.getElementById('subscribeUrlInput').value = url;
+            await addSubscribe();
+        }
+        
+        // 刷新单个订阅
+        async function refreshSubscribe(index) {
+            const sub = subscribeList[index];
+            if (!sub) return;
+            
+            showToast('正在刷新订阅...');
+            
+            try {
+                const result = await fetchHtml(sub.url);
+                if (!result.success) {
+                    showToast('刷新失败', true);
+                    return;
+                }
+                
+                const data = JSON.parse(result.content);
+                const sources = extractBookSources(data);
+                
+                if (sources.length === 0) {
+                    showToast('未找到有效书源', true);
+                    return;
+                }
+                
+                // 更新订阅信息
+                subscribeList[index].sourceCount = sources.length;
+                subscribeList[index].lastUpdate = Date.now();
+                subscribeList[index].sources = sources;
+                Storage.set('subscribeList', subscribeList);
+                
+                // 更新书源
+                let added = 0, updated = 0;
+                sources.forEach(s => {
+                    if (!s.bookSourceName || !s.bookSourceUrl) return;
+                    const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
+                    if (existingIndex >= 0) {
+                        bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: s.enabled !== false };
+                        updated++;
+                    } else {
+                        bookSources.push({ ...s, enabled: s.enabled !== false });
+                        added++;
+                    }
+                });
+                
+                Storage.set('bookSources', bookSources);
+                updateSourceCount();
+                updateSourceSelect();
+                renderSourceList();
+                renderSubscribeList();
+                
+                showToast(`刷新成功！新增 ${added} 个，更新 ${updated} 个书源`);
+                
+            } catch (e) {
+                showToast('刷新失败: ' + e.message, true);
+            }
+        }
+        
+        // 刷新所有订阅
+        async function refreshAllSubscribes() {
+            if (!subscribeList || subscribeList.length === 0) {
+                showToast('暂无订阅', true);
+                return;
+            }
+            
+            const statusDiv = document.getElementById('subscribeStatus');
+            statusDiv.classList.remove('hidden');
+            statusDiv.innerHTML = '<div class="loading">正在刷新所有订阅...</div>';
+            
+            let totalAdded = 0, totalUpdated = 0;
+            
+            for (let i = 0; i < subscribeList.length; i++) {
+                const sub = subscribeList[i];
+                statusDiv.innerHTML = `<div class="loading">正在刷新 ${i + 1}/${subscribeList.length}...</div>`;
+                
+                try {
+                    const result = await fetchHtml(sub.url);
+                    if (result.success) {
+                        const data = JSON.parse(result.content);
+                        const sources = extractBookSources(data);
+                        
+                        subscribeList[i].sourceCount = sources.length;
+                        subscribeList[i].lastUpdate = Date.now();
+                        subscribeList[i].sources = sources;
+                        
+                        sources.forEach(s => {
+                            if (!s.bookSourceName || !s.bookSourceUrl) return;
+                            const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
+                            if (existingIndex >= 0) {
+                                bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: s.enabled !== false };
+                                totalUpdated++;
+                            } else {
+                                bookSources.push({ ...s, enabled: s.enabled !== false });
+                                totalAdded++;
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error('刷新订阅失败:', sub.url, e);
+                }
+            }
+            
+            Storage.set('subscribeList', subscribeList);
+            Storage.set('bookSources', bookSources);
+            updateSourceCount();
+            updateSourceSelect();
+            renderSourceList();
+            renderSubscribeList();
+            
+            statusDiv.classList.add('hidden');
+            showToast(`全部刷新完成！新增 ${totalAdded} 个，更新 ${totalUpdated} 个书源`);
+        }
+        
+        // 删除订阅
+        function removeSubscribe(index) {
+            if (confirm('确定取消此订阅？')) {
+                subscribeList.splice(index, 1);
+                Storage.set('subscribeList', subscribeList);
+                renderSubscribeList();
+                showToast('已取消订阅');
+            }
+        }
+        
+        // 显示添加订阅弹窗（预留）
+        function showAddSubscribeModal() {
+            showToast('请直接在上方输入框粘贴订阅URL');
         }
         
         // 启动
