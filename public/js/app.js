@@ -179,12 +179,14 @@ class App {
                     // 检查是否是重定向到书籍页面（搜索精确匹配）
                     if (result.isRedirect && result.redirectBookUrl) {
                         console.log(`[${result.sourceName}] 搜索精确匹配，跳转到书籍页面`);
-                        // 从书籍页面提取书籍信息
+                        // 从书籍页面提取书籍信息 - 使用ruleBookInfo而不是ruleSearch.ruleBookInfo
                         const bookInfo = HtmlParser.parseBookInfo(
                             result.html,
-                            result.ruleSearch?.ruleBookInfo,
+                            result.ruleBookInfo,  // 使用书源的ruleBookInfo
                             result.baseUrl
                         );
+                        
+                        console.log('解析书籍信息:', bookInfo);
                         
                         if (bookInfo && bookInfo.name) {
                             books = [{
@@ -199,6 +201,30 @@ class App {
                                 type: 0,
                                 time: Date.now()
                             }];
+                        } else {
+                            // 如果解析失败，尝试从meta标签提取
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(result.html, 'text/html');
+                            
+                            const nameMeta = doc.querySelector('meta[property="og:novel:book_name"]');
+                            const authorMeta = doc.querySelector('meta[property="og:novel:author"]');
+                            const introMeta = doc.querySelector('meta[property="og:description"]');
+                            const coverMeta = doc.querySelector('meta[property="og:image"]');
+                            
+                            if (nameMeta) {
+                                books = [{
+                                    name: nameMeta.getAttribute('content') || '',
+                                    author: authorMeta ? authorMeta.getAttribute('content') : '',
+                                    bookUrl: result.redirectBookUrl,
+                                    coverUrl: coverMeta ? coverMeta.getAttribute('content') : '',
+                                    intro: introMeta ? introMeta.getAttribute('content') : '',
+                                    lastChapter: '',
+                                    origin: result.source,
+                                    originName: result.sourceName,
+                                    type: 0,
+                                    time: Date.now()
+                                }];
+                            }
                         }
                     } else {
                         // 普通搜索结果解析

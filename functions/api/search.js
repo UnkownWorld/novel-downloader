@@ -194,6 +194,9 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
                     source: source.bookSourceUrl,
                     sourceName: source.bookSourceName,
                     ruleSearch: source.ruleSearch,
+                    ruleBookInfo: source.ruleBookInfo,  // 添加书籍信息规则
+                    ruleToc: source.ruleToc,  // 添加目录规则
+                    ruleContent: source.ruleContent,  // 添加内容规则
                     html: bookHtml,
                     baseUrl: fullRedirectUrl,
                     requestUrl: actualUrl,
@@ -255,6 +258,9 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
             source: source.bookSourceUrl,
             sourceName: source.bookSourceName,
             ruleSearch: source.ruleSearch,
+            ruleBookInfo: source.ruleBookInfo,  // 添加书籍信息规则
+            ruleToc: source.ruleToc,  // 添加目录规则
+            ruleContent: source.ruleContent,  // 添加内容规则
             html: html,
             baseUrl: response.url,
             requestUrl: actualUrl,
