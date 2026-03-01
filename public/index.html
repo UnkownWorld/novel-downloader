@@ -764,21 +764,42 @@
             const cached = Cache.get(url);
             if (cached) return { content: cached, success: true, url, fromCache: true };
             
+            // 自动将HTTP转换为HTTPS（大多数网站都支持HTTPS）
+            if (url.startsWith('http://')) {
+                url = url.replace('http://', 'https://');
+            }
+            
+            // 多个代理，按可靠性排序
             const proxies = [
-                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-                `https://corsproxy.io/?${encodeURIComponent(url)}`
+                // 代理1: codetabs (免费，稳定)
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                // 代理2: allorigins
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                // 代理3: corsproxy
+                `https://corsproxy.io/?${encodeURIComponent(url)}`,
             ];
             
             for (const proxyUrl of proxies) {
                 try {
-                    const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-                    const data = await response.json();
-                    if (data.contents || data) {
-                        const content = data.contents || (typeof data === 'string' ? data : JSON.stringify(data));
+                    const response = await fetch(proxyUrl, { 
+                        signal: AbortSignal.timeout(12000),
+                    });
+                    
+                    if (!response.ok) continue;
+                    
+                    const content = await response.text();
+                    
+                    // 检查是否是有效的响应
+                    if (content && content.length > 0 && 
+                        !content.includes('Sorry, you have been blocked') &&
+                        !content.includes('Internal Server Error') &&
+                        !content.includes('404')) {
                         Cache.set(url, content);
                         return { content, success: true, url, fromCache: false };
                     }
-                } catch (e) { continue; }
+                } catch (e) { 
+                    continue; 
+                }
             }
             
             return { content: '', success: false, error: '请求失败', url };
@@ -1282,74 +1303,68 @@
                     <span>正在测试书源...</span>
                     <button class="btn btn-danger btn-small" onclick="stopTest()">停止测试</button>
                 </div>
-                <div style="font-size:0.8rem;color:rgba(255,255,255,0.6)">测试方法: 测试首页可访问性</div>
+                <div style="font-size:0.8rem;color:rgba(255,255,255,0.6)">使用后端API测试，更准确</div>
             `;
             
             const enabledSources = bookSources.filter(s => s.enabled !== false);
             const total = enabledSources.length;
             let valid = 0;
             let invalid = 0;
-            let slow = 0;
             const invalidList = [];
-            const slowList = [];
             const testResults = [];
             
-            // 并发测试，每次最多5个
-            const batchSize = 5;
+            // 每批测试20个（后端限制）
+            const batchSize = 20;
+            
             for (let i = 0; i < enabledSources.length; i += batchSize) {
-                // 检查是否中断
-                if (testAborted === 'stop') {
-                    break;
-                }
+                if (testAborted === 'stop') break;
                 
                 const batch = enabledSources.slice(i, i + batchSize);
-                const results = await Promise.all(batch.map(async (source) => {
-                    const testResult = {
-                        source,
-                        homepageOk: false,
-                        responseTime: 0,
-                        error: ''
-                    };
-                    
-                    try {
-                        const startTime = Date.now();
-                        
-                        // 只测试首页是否可访问
-                        const homeResult = await fetchHtml(source.bookSourceUrl);
-                        testResult.homepageOk = homeResult.success;
-                        testResult.responseTime = Date.now() - startTime;
-                        
-                        if (!homeResult.success) {
-                            testResult.error = '首页无法访问';
-                        }
-                        
-                    } catch (e) {
-                        testResult.error = e.message || '测试失败';
-                    }
-                    
-                    return testResult;
-                }));
+                const urls = batch.map(s => ({ url: s.bookSourceUrl, name: s.bookSourceName }));
                 
-                // 处理测试结果
-                for (const result of results) {
-                    testResults.push(result);
+                try {
+                    // 调用后端API测试
+                    const response = await fetch('/api/test-sources', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ urls })
+                    });
                     
-                    // 简化判断：首页可访问 = 有效
-                    const isValid = result.homepageOk;
-                    const isSlow = result.responseTime > 10000;
+                    const data = await response.json();
                     
-                    if (isValid) {
-                        valid++;
-                        if (isSlow) {
-                            slow++;
-                            slowList.push(result.source.bookSourceName);
+                    if (data.success) {
+                        // 处理结果
+                        for (const result of data.results) {
+                            const source = batch.find(s => s.bookSourceUrl === result.url);
+                            if (source) {
+                                testResults.push({
+                                    source,
+                                    homepageOk: result.success,
+                                    responseTime: result.responseTime,
+                                    error: result.error
+                                });
+                                
+                                if (result.success) {
+                                    valid++;
+                                } else {
+                                    invalid++;
+                                    invalidList.push({
+                                        name: result.name,
+                                        url: result.url,
+                                        error: result.error
+                                    });
+                                }
+                            }
                         }
-                    } else {
+                    }
+                } catch (e) {
+                    // API调用失败，标记这批为未知
+                    for (const source of batch) {
                         invalid++;
                         invalidList.push({
-                            name: result.source.bookSourceName,
-                            url: result.source.bookSourceUrl,
-                            error: result.error || '未知错误'
+                            name: source.bookSourceName,
+                            url: source.bookSourceUrl,
+                            error: '测试失败'
                         });
                     }
                 }
@@ -1363,7 +1378,6 @@
                     </div>
                     <div style="color:#00b894">✓ 有效: ${valid}</div>
                     <div style="color:#e94560">✗ 失效: ${invalid}</div>
-                    ${slow > 0 ? `<div style="color:#ffc107">⚠ 响应慢: ${slow}</div>` : ''}
                 `;
             }
             
@@ -1375,7 +1389,6 @@
                 </div>
                 <div style="color:#00b894">✓ 有效书源: ${valid}</div>
                 <div style="color:#e94560">✗ 失效书源: ${invalid}</div>
-                ${slow > 0 ? `<div style="color:#ffc107">⚠ 响应较慢: ${slow}</div>` : ''}
                 ${invalid > 0 ? `
                     <div style="margin-top:8px;font-size:0.75rem;color:rgba(255,255,255,0.6);max-height:100px;overflow-y:auto">
                         失效书源:<br>
@@ -1386,7 +1399,6 @@
                 ${invalid > 0 ? `<button class="btn btn-danger btn-small" style="margin-top:8px" onclick="removeInvalidSources()">删除 ${invalid} 个失效书源</button>` : ''}
             `;
             
-            // 保存失效书源列表
             window.invalidSources = invalidNames;
             window.testResults = testResults;
             
