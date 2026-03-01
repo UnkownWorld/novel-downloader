@@ -1,8 +1,13 @@
 /**
- * HTML解析模块 - 改进版
+ * HTML解析模块 - 参考Legado实现
+ * 支持完整的书源规则语法
  */
 
 class HtmlParser {
+    constructor() {
+        this.ruleParser = new RuleParser();
+    }
+
     /**
      * 解析搜索结果
      */
@@ -15,35 +20,44 @@ class HtmlParser {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            const elements = doc.querySelectorAll(rule.bookList);
+            // 获取书籍列表
+            const listRule = rule.bookList;
+            const elements = this.getElements(doc, listRule, baseUrl);
             
-            elements.forEach(el => {
+            console.log(`parseSearchResult: 找到 ${elements.length} 个元素`);
+            
+            for (const el of elements) {
                 const book = {
-                    name: this.getElementText(el, rule.name),
-                    author: this.getElementText(el, rule.author),
-                    bookUrl: this.getElementUrl(el, rule.bookUrl, baseUrl),
-                    coverUrl: this.getElementUrl(el, rule.coverUrl, baseUrl),
-                    intro: this.getElementText(el, rule.intro),
-                    kind: this.getElementText(el, rule.kind),
-                    lastChapter: this.getElementText(el, rule.lastChapter),
-                    wordCount: this.getElementText(el, rule.wordCount),
-                    origin: source.bookSourceUrl,
-                    originName: source.bookSourceName,
-                    type: source.bookSourceType || 0,
+                    name: this.getString(el, rule.name, baseUrl),
+                    author: this.getString(el, rule.author, baseUrl),
+                    bookUrl: this.getString(el, rule.bookUrl, baseUrl),
+                    coverUrl: this.getString(el, rule.coverUrl, baseUrl),
+                    intro: this.getString(el, rule.intro, baseUrl),
+                    kind: this.getString(el, rule.kind, baseUrl),
+                    lastChapter: this.getString(el, rule.lastChapter, baseUrl),
+                    wordCount: this.getString(el, rule.wordCount, baseUrl),
+                    origin: source?.bookSourceUrl || '',
+                    originName: source?.bookSourceName || '',
+                    type: source?.bookSourceType || 0,
                     time: Date.now()
                 };
+                
+                // 清理作者名
+                if (book.author) {
+                    book.author = book.author.replace(/作者[：:]/g, '').trim();
+                }
                 
                 if (book.name && book.bookUrl) {
                     books.push(book);
                 }
-            });
+            }
         } catch (e) {
             console.error('解析搜索结果错误:', e);
         }
         
         return books;
     }
-    
+
     /**
      * 解析书籍信息
      */
@@ -53,18 +67,25 @@ class HtmlParser {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         
-        return {
-            name: this.getElementText(doc, rule?.name),
-            author: this.getElementText(doc, rule?.author),
-            intro: this.getElementText(doc, rule?.intro),
-            coverUrl: this.getElementUrl(doc, rule?.coverUrl, baseUrl),
-            tocUrl: this.getElementUrl(doc, rule?.tocUrl, baseUrl) || baseUrl,
-            kind: this.getElementText(doc, rule?.kind),
-            lastChapter: this.getElementText(doc, rule?.lastChapter),
-            wordCount: this.getElementText(doc, rule?.wordCount)
+        const info = {
+            name: this.getString(doc, rule?.name, baseUrl),
+            author: this.getString(doc, rule?.author, baseUrl),
+            intro: this.getString(doc, rule?.intro, baseUrl),
+            coverUrl: this.getString(doc, rule?.coverUrl, baseUrl),
+            tocUrl: this.getString(doc, rule?.tocUrl, baseUrl) || baseUrl,
+            kind: this.getString(doc, rule?.kind, baseUrl),
+            lastChapter: this.getString(doc, rule?.lastChapter, baseUrl),
+            wordCount: this.getString(doc, rule?.wordCount, baseUrl)
         };
+        
+        // 清理作者名
+        if (info.author) {
+            info.author = info.author.replace(/作者[：:]/g, '').trim();
+        }
+        
+        return info;
     }
-    
+
     /**
      * 解析目录列表
      */
@@ -77,13 +98,15 @@ class HtmlParser {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            const elements = doc.querySelectorAll(rule.chapterList);
+            const elements = this.getElements(doc, rule.chapterList, baseUrl);
+            
+            console.log(`parseChapterList: 找到 ${elements.length} 个章节`);
             
             elements.forEach((el, index) => {
                 const chapter = {
                     index: index,
-                    title: this.getElementText(el, rule.chapterName),
-                    url: this.getElementUrl(el, rule.chapterUrl, baseUrl),
+                    title: this.getString(el, rule.chapterName, baseUrl),
+                    url: this.getString(el, rule.chapterUrl, baseUrl),
                     isVip: false,
                     isPay: false
                 };
@@ -98,15 +121,9 @@ class HtmlParser {
         
         return chapters;
     }
-    
+
     /**
-     * 解析章节内容 - 改进版，返回详细结果
-     * 支持多种选择器格式：
-     * - #content@html: 获取id为content的元素的innerHTML
-     * - .content@text: 获取class为content的第一个元素的textContent
-     * - .content@texts: 获取所有class为content的元素的textContent（合并）
-     * - p@html: 获取第一个p元素的innerHTML
-     * - p@htmls: 获取所有p元素的innerHTML（合并）
+     * 解析章节内容
      */
     static parseContent(html, rule, baseUrl) {
         const result = {
@@ -121,13 +138,8 @@ class HtmlParser {
             return result;
         }
         
-        if (!rule) {
+        if (!rule || !rule.content) {
             result.error = '没有内容规则';
-            return result;
-        }
-        
-        if (!rule.content) {
-            result.error = '规则中没有content选择器';
             return result;
         }
         
@@ -138,98 +150,16 @@ class HtmlParser {
             result.debug.htmlLength = html.length;
             result.debug.rule = rule.content;
             
-            // 处理多个选择器（用||分隔）
-            const selectors = rule.content.split('||');
-            result.debug.selectors = selectors;
+            // 获取内容
+            let content = this.getString(doc, rule.content, baseUrl);
             
-            for (const selector of selectors) {
-                const trimmed = selector.trim();
-                if (!trimmed) continue;
-                
-                // 处理属性选择器
-                if (trimmed.includes('@')) {
-                    const parts = trimmed.split('@');
-                    const cssSelector = parts[0];
-                    const attr = parts[1];
-                    
-                    result.debug.selector = trimmed;
-                    
-                    // 检查是否需要获取所有匹配元素（@texts, @htmls）
-                    const getAll = attr === 'texts' || attr === 'htmls' || attr === 'textAll' || attr === 'htmlAll';
-                    const actualAttr = attr.replace(/s$|All$/, '').replace('text', 'textContent').replace('html', 'innerHTML');
-                    
-                    if (getAll) {
-                        // 获取所有匹配元素
-                        const elements = doc.querySelectorAll(cssSelector);
-                        result.debug.foundCount = elements.length;
-                        
-                        if (elements.length > 0) {
-                            const contents = [];
-                            elements.forEach(el => {
-                                if (actualAttr === 'textContent') {
-                                    contents.push(el.textContent);
-                                } else if (actualAttr === 'innerHTML') {
-                                    contents.push(el.innerHTML);
-                                } else {
-                                    const attrValue = el.getAttribute(actualAttr);
-                                    if (attrValue) contents.push(attrValue);
-                                }
-                            });
-                            
-                            const raw = contents.join('\n');
-                            result.content = this.cleanContent(raw);
-                            result.debug.rawLength = raw.length;
-                            result.success = true;
-                            return result;
-                        }
-                    } else {
-                        // 获取单个元素
-                        const el = doc.querySelector(cssSelector);
-                        result.debug.found = !!el;
-                        
-                        if (el) {
-                            if (attr === 'html' || attr === 'innerHTML') {
-                                const raw = el.innerHTML;
-                                result.content = this.cleanContent(raw);
-                                result.debug.rawLength = raw.length;
-                                result.success = true;
-                                return result;
-                            } else if (attr === 'text' || attr === 'textContent') {
-                                const raw = el.textContent;
-                                result.content = this.cleanContent(raw);
-                                result.debug.rawLength = raw.length;
-                                result.success = true;
-                                return result;
-                            }
-                            const attrValue = el.getAttribute(attr);
-                            if (attrValue) {
-                                result.content = this.cleanContent(attrValue);
-                                result.success = true;
-                                return result;
-                            }
-                        }
-                    }
-                } else {
-                    // 没有属性选择器，默认获取innerHTML
-                    const el = doc.querySelector(trimmed);
-                    
-                    result.debug.selector = trimmed;
-                    result.debug.found = !!el;
-                    
-                    if (el) {
-                        // 优先使用innerHTML，保留格式
-                        let raw = el.innerHTML || el.textContent;
-                        result.debug.rawLength = raw.length;
-                        result.content = this.cleanContent(raw);
-                        result.success = true;
-                        return result;
-                    }
-                }
+            if (content) {
+                result.content = this.cleanContent(content);
+                result.success = true;
+                result.debug.contentLength = result.content.length;
+            } else {
+                result.error = '未获取到内容';
             }
-            
-            // 所有选择器都没找到
-            result.error = '选择器未匹配到内容';
-            result.debug.matchedSelectors = 0;
             
         } catch (e) {
             result.error = '解析错误: ' + e.message;
@@ -238,157 +168,273 @@ class HtmlParser {
         
         return result;
     }
-    
+
     /**
-     * 解析章节内容 - 支持JS规则
-     * @param {string} html - HTML内容
-     * @param {object} rule - 规则对象
-     * @param {string} baseUrl - 基础URL
-     * @returns {Promise<object>} 解析结果
+     * 获取字符串结果
      */
-    static async parseContentWithJs(html, rule, baseUrl) {
-        const result = {
-            success: false,
-            content: '',
-            error: '',
-            debug: {}
-        };
+    static getString(context, ruleStr, baseUrl = '') {
+        if (!ruleStr || !context) return '';
         
-        if (!rule || !rule.content) {
-            result.error = '没有内容规则';
-            return result;
-        }
-        
-        const ruleContent = rule.content;
-        result.debug.rule = ruleContent;
-        
-        // 检查是否包含JS规则
-        if (ruleContent.includes('<js>') || ruleContent.includes('@js:')) {
-            try {
-                // 创建JS执行器
-                const executor = new JsRuleExecutor();
-                
-                // 执行JS规则
-                const jsResult = await executor.parseAndExecute(ruleContent, {
-                    baseUrl: baseUrl,
-                    html: html
-                });
-                
-                if (jsResult) {
-                    result.content = this.cleanContent(jsResult);
-                    result.success = true;
-                    result.debug.jsExecuted = true;
-                    return result;
-                }
-            } catch (e) {
-                console.error('JS规则执行失败:', e);
-                result.error = 'JS执行失败: ' + e.message;
-            }
-        }
-        
-        // 如果没有JS规则或JS执行失败，使用普通解析
-        return this.parseContent(html, rule, baseUrl);
-    }
-    
-    /**
-     * 获取元素文本
-     */
-    static getElementText(parent, selector) {
-        if (!selector) return '';
         try {
-            if (selector.includes('@')) {
-                const parts = selector.split('@');
-                const el = parent.querySelector(parts[0]);
-                if (!el) return '';
-                const attr = parts[1];
-                if (attr === 'text' || attr === 'textContent') {
-                    return el.textContent.trim();
-                } else if (attr === 'html' || attr === 'innerHTML') {
-                    return el.innerHTML;
-                }
-                return el.getAttribute(attr) || '';
+            // 处理JS规则
+            if (ruleStr.includes('<js>') || ruleStr.includes('@js:')) {
+                return this.executeJsRule(ruleStr, context, baseUrl);
             }
             
-            const el = parent.querySelector ? parent.querySelector(selector) : null;
-            return el ? el.textContent.trim() : '';
-        } catch (e) {
-            return '';
-        }
-    }
-    
-    /**
-     * 获取元素URL
-     */
-    static getElementUrl(parent, selector, baseUrl) {
-        if (!selector) return '';
-        try {
-            let el, attr = 'href';
+            // 处理||分隔符（多个规则，任一成功即可）
+            if (ruleStr.includes('||')) {
+                const rules = ruleStr.split('||');
+                for (const r of rules) {
+                    const result = this.getString(context, r.trim(), baseUrl);
+                    if (result) return result;
+                }
+                return '';
+            }
             
+            // 处理&&分隔符（多个规则，都要执行）
+            if (ruleStr.includes('&&')) {
+                const rules = ruleStr.split('&&');
+                const results = [];
+                for (const r of rules) {
+                    const result = this.getString(context, r.trim(), baseUrl);
+                    if (result) results.push(result);
+                }
+                return results.join('\n');
+            }
+            
+            // 处理##替换规则
+            let replaceRegex = '';
+            let replacement = '';
+            const replaceMatch = ruleStr.match(/^(.+?)##(.+?)(?:##(.+?))?$/);
+            if (replaceMatch) {
+                ruleStr = replaceMatch[1];
+                replaceRegex = replaceMatch[2];
+                replacement = replaceMatch[3] || '';
+            }
+            
+            // 解析选择器和属性
+            let selector = ruleStr;
+            let attr = 'text';
+            let index = -1;
+            
+            // 处理@属性
             if (selector.includes('@')) {
                 const parts = selector.split('@');
-                el = parent.querySelector(parts[0]);
-                attr = parts[1] || 'href';
+                selector = parts[0];
+                attr = parts[1] || 'text';
+            }
+            
+            // 处理.索引 (如: .author.0@text)
+            const indexMatch = selector.match(/\.(\d+)$/);
+            if (indexMatch) {
+                index = parseInt(indexMatch[1]);
+                selector = selector.substring(0, selector.length - indexMatch[0].length);
+            }
+            
+            // 处理class选择器 (如: .bookname a -> .bookname a)
+            // Legado格式: class.tag 或 class.0.tag
+            selector = selector
+                .replace(/^class\./, '.')
+                .replace(/\.([a-zA-Z])/g, '.$1');
+            
+            // 执行选择器
+            let elements;
+            if (typeof selector === 'string' && selector.startsWith('//')) {
+                // XPath - 浏览器不支持，跳过
+                console.warn('XPath不支持:', selector);
+                return '';
+            } else if (selector.startsWith('$.') || selector.startsWith('$[')) {
+                // JSONPath
+                return this.executeJsonPath(context, selector);
             } else {
-                el = parent.querySelector(selector);
+                // CSS选择器
+                elements = context.querySelectorAll ? 
+                    context.querySelectorAll(selector) : 
+                    (context.querySelector ? [context.querySelector(selector)].filter(Boolean) : []);
             }
             
-            if (!el) return '';
+            if (elements.length === 0) return '';
             
-            let value = el.getAttribute(attr) || el.getAttribute('data-' + attr) || '';
+            // 应用索引
+            if (index >= 0) {
+                elements = index < elements.length ? [elements[index]] : [];
+            }
             
-            if (value && !value.startsWith('http')) {
+            // 获取属性值
+            let result = '';
+            const el = elements[0];
+            
+            if (attr === 'text' || attr === 'textContent') {
+                result = el.textContent || '';
+            } else if (attr === 'html' || attr === 'innerHTML') {
+                result = el.innerHTML || '';
+            } else if (attr === 'href' || attr === 'src') {
+                result = el.getAttribute(attr) || '';
+                // 转换为绝对URL
+                if (result && !result.startsWith('http') && baseUrl) {
+                    try {
+                        result = new URL(result, baseUrl).href;
+                    } catch (e) {}
+                }
+            } else if (attr === 'content') {
+                // meta标签的content属性
+                result = el.getAttribute('content') || el.getAttribute('value') || '';
+            } else {
+                result = el.getAttribute(attr) || el.textContent || '';
+            }
+            
+            // 应用正则替换
+            if (replaceRegex && result) {
+                result = result.replace(new RegExp(replaceRegex, 'g'), replacement);
+            }
+            
+            return result.trim();
+            
+        } catch (e) {
+            console.error('getString错误:', e, ruleStr);
+            return '';
+        }
+    }
+
+    /**
+     * 获取元素列表
+     */
+    static getElements(context, ruleStr, baseUrl = '') {
+        if (!ruleStr || !context) return [];
+        
+        try {
+            // 处理负号（反向）
+            let reverse = false;
+            if (ruleStr.startsWith('-')) {
+                reverse = true;
+                ruleStr = ruleStr.substring(1);
+            }
+            
+            // 处理正号
+            if (ruleStr.startsWith('+')) {
+                ruleStr = ruleStr.substring(1);
+            }
+            
+            // 处理JS规则
+            if (ruleStr.includes('<js>') || ruleStr.includes('@js:')) {
+                const result = this.executeJsRule(ruleStr, context, baseUrl);
+                return Array.isArray(result) ? result : [result];
+            }
+            
+            // CSS选择器
+            let elements = context.querySelectorAll ? 
+                Array.from(context.querySelectorAll(ruleStr)) : 
+                [];
+            
+            if (reverse) {
+                elements = elements.reverse();
+            }
+            
+            return elements;
+            
+        } catch (e) {
+            console.error('getElements错误:', e, ruleStr);
+            return [];
+        }
+    }
+
+    /**
+     * 执行JS规则
+     */
+    static executeJsRule(ruleStr, context, baseUrl) {
+        try {
+            // 提取JS代码
+            let jsCode = ruleStr;
+            if (jsCode.startsWith('<js>')) {
+                jsCode = jsCode.replace(/^<js>|<\/js>$/g, '');
+            } else if (jsCode.startsWith('@js:')) {
+                jsCode = jsCode.substring(4);
+            }
+            
+            // 获取上下文内容
+            const result = typeof context === 'string' ? context : 
+                (context.textContent || context.innerHTML || '');
+            
+            // 创建执行器并执行
+            const executor = new JsRuleExecutor();
+            
+            // 同步执行（简化版）
+            const wrappedCode = `
+                (function(java, result, baseUrl, src) {
+                    ${jsCode}
+                })
+            `;
+            
+            const fn = eval(wrappedCode);
+            const javaMock = {
+                ajax: (url) => {
+                    console.warn('java.ajax需要在服务端执行:', url);
+                    return '';
+                }
+            };
+            
+            return fn(javaMock, result, baseUrl, context) || '';
+            
+        } catch (e) {
+            console.error('JS规则执行错误:', e);
+            return '';
+        }
+    }
+
+    /**
+     * 执行JSONPath
+     */
+    static executeJsonPath(context, path) {
+        try {
+            let json = context;
+            if (typeof context === 'string') {
                 try {
-                    value = new URL(value, baseUrl).href;
+                    json = JSON.parse(context);
                 } catch (e) {
-                    // 忽略
+                    return '';
                 }
             }
             
-            return value;
+            const parts = path.replace(/^\$\.?/, '').split(/\.|\[|\]/).filter(p => p);
+            let result = json;
+            
+            for (const part of parts) {
+                if (result === null || result === undefined) return '';
+                result = result[part];
+            }
+            
+            return result || '';
         } catch (e) {
             return '';
         }
     }
-    
+
     /**
-     * 清理内容 - 改进版
+     * 清理内容
      */
     static cleanContent(content) {
         if (!content) return '';
         
-        // 移除script和style标签及其内容
+        // 移除script和style
         content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
         content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
         
         // 移除注释
         content = content.replace(/<!--[\s\S]*?-->/g, '');
         
-        // 将br和p标签转换为换行
+        // 将br和p转换为换行
         content = content.replace(/<br\s*\/?>/gi, '\n');
         content = content.replace(/<\/p>/gi, '\n');
         content = content.replace(/<p[^>]*>/gi, '');
         
-        // 移除其他HTML标签，但保留内容
+        // 移除其他HTML标签
         content = content.replace(/<[^>]+>/g, '');
         
         // 解码HTML实体
         const entities = {
-            '&nbsp;': ' ',
-            '&lt;': '<',
-            '&gt;': '>',
-            '&amp;': '&',
-            '&quot;': '"',
-            '&#39;': "'",
-            '&#34;': '"',
-            '&#60;': '<',
-            '&#62;': '>',
-            '&#38;': '&',
-            '&#160;': ' ',
-            '&ldquo;': '"',
-            '&rdquo;': '"',
-            '&mdash;': '——',
-            '&ndash;': '-',
-            '&hellip;': '……'
+            '&nbsp;': ' ', '&lt;': '<', '&gt;': '>', '&amp;': '&',
+            '&quot;': '"', '&#39;': "'", '&ldquo;': '"', '&rdquo;': '"',
+            '&mdash;': '——', '&ndash;': '-', '&hellip;': '……'
         };
         
         for (const [entity, char] of Object.entries(entities)) {
@@ -396,23 +442,16 @@ class HtmlParser {
         }
         
         // 处理数字实体
-        content = content.replace(/&#(\d+);/g, (match, num) => {
-            return String.fromCharCode(parseInt(num));
-        });
+        content = content.replace(/&#(\d+);/g, (m, n) => String.fromCharCode(parseInt(n)));
+        content = content.replace(/&#x([0-9a-fA-F]+);/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
         
-        // 处理十六进制实体
-        content = content.replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
-            return String.fromCharCode(parseInt(hex, 16));
-        });
-        
-        // 清理多余空白，但保留段落格式
+        // 清理多余空白
         content = content.replace(/[ \t]+/g, ' ');
         content = content.replace(/\n[ \t]+/g, '\n');
         content = content.replace(/[ \t]+\n/g, '\n');
         content = content.replace(/\n{3,}/g, '\n\n');
-        content = content.trim();
         
-        return content;
+        return content.trim();
     }
 }
 
