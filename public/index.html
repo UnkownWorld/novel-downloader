@@ -314,9 +314,14 @@
                 </div>
                 
                 <div class="btn-group">
+                    <button class="btn btn-secondary btn-small" onclick="testSources()">🧪 测试书源</button>
                     <button class="btn btn-secondary btn-small" onclick="exportSources()">📤 导出</button>
+                    <button class="btn btn-danger btn-small" onclick="removeInvalidSources()">🗑️ 删除失效</button>
                     <button class="btn btn-danger btn-small" onclick="clearSources()">🗑️ 清空</button>
                 </div>
+                
+                <!-- 测试状态 -->
+                <div class="import-status hidden" id="testStatus"></div>
             </div>
         </div>
         
@@ -1187,47 +1192,173 @@
             }
         }
         
+        // 测试书源有效性
+        async function testSources() {
+            if (!bookSources || bookSources.length === 0) {
+                showToast('没有书源可测试', true);
+                return;
+            }
+            
+            const testStatus = document.getElementById('testStatus');
+            testStatus.classList.remove('hidden');
+            testStatus.innerHTML = '<div style="margin-bottom:8px">正在测试书源，请稍候...</div>';
+            
+            const enabledSources = bookSources.filter(s => s.enabled !== false);
+            const total = enabledSources.length;
+            let valid = 0;
+            let invalid = 0;
+            const invalidList = [];
+            
+            // 并发测试，每次最多5个
+            const batchSize = 5;
+            for (let i = 0; i < enabledSources.length; i += batchSize) {
+                const batch = enabledSources.slice(i, i + batchSize);
+                const results = await Promise.all(batch.map(async (source) => {
+                    try {
+                        // 测试书源首页是否可访问
+                        const result = await fetchHtml(source.bookSourceUrl);
+                        return { source, success: result.success };
+                    } catch (e) {
+                        return { source, success: false };
+                    }
+                }));
+                
+                for (const { source, success } of results) {
+                    if (success) {
+                        valid++;
+                    } else {
+                        invalid++;
+                        invalidList.push(source.bookSourceName);
+                    }
+                }
+                
+                // 更新进度
+                const progress = Math.min(i + batchSize, total);
+                testStatus.innerHTML = `
+                    <div style="margin-bottom:8px">测试进度: ${progress}/${total}</div>
+                    <div style="color:#00b894">✓ 有效: ${valid}</div>
+                    <div style="color:#e94560">✗ 失效: ${invalid}</div>
+                `;
+            }
+            
+            // 显示最终结果
+            testStatus.innerHTML = `
+                <div style="margin-bottom:8px;font-weight:bold">测试完成</div>
+                <div style="color:#00b894">✓ 有效书源: ${valid}</div>
+                <div style="color:#e94560">✗ 失效书源: ${invalid}</div>
+                ${invalid > 0 ? `<div style="margin-top:8px;font-size:0.8rem;color:rgba(255,255,255,0.6)">失效书源: ${invalidList.slice(0, 5).join(', ')}${invalid > 5 ? '...' : ''}</div>` : ''}
+                ${invalid > 0 ? `<button class="btn btn-danger btn-small" style="margin-top:8px" onclick="removeInvalidSources()">删除 ${invalid} 个失效书源</button>` : ''}
+            `;
+            
+            // 保存失效书源列表
+            window.invalidSources = invalidList;
+            showToast(`测试完成: ${valid} 个有效, ${invalid} 个失效`);
+        }
+        
+        // 删除失效书源
+        function removeInvalidSources() {
+            if (!window.invalidSources || window.invalidSources.length === 0) {
+                // 如果没有测试过，先提示测试
+                showToast('请先测试书源', true);
+                return;
+            }
+            
+            const invalidCount = window.invalidSources.length;
+            if (!confirm(`确定要删除 ${invalidCount} 个失效书源吗？`)) {
+                return;
+            }
+            
+            // 过滤掉失效的书源
+            bookSources = bookSources.filter(s => !window.invalidSources.includes(s.bookSourceName));
+            
+            Storage.set('bookSources', bookSources);
+            updateSourceCount();
+            updateSourceSelect();
+            renderSourceList();
+            
+            // 清空测试状态
+            document.getElementById('testStatus').classList.add('hidden');
+            window.invalidSources = [];
+            
+            showToast(`已删除 ${invalidCount} 个失效书源`);
+        }
+        
         // ========== 搜索 ==========
         
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const keyword = document.getElementById('searchInput').value.trim();
-            if (!keyword) return;
+            if (!keyword) {
+                showToast('请输入搜索关键词', true);
+                return;
+            }
+            
+            // 检查书源
+            if (!bookSources || bookSources.length === 0) {
+                showToast('请先导入书源', true);
+                return;
+            }
             
             const enabledSources = bookSources.filter(s => s.enabled !== false && s.searchUrl);
-            if (!enabledSources.length) { showToast('没有可用的书源', true); return; }
+            if (!enabledSources.length) { 
+                showToast('没有可用的书源（书源未启用或缺少搜索地址）', true); 
+                return; 
+            }
             
             const btn = document.getElementById('searchBtn');
             btn.disabled = true;
             btn.textContent = '搜索中...';
             searchResults = [];
             
+            // 显示搜索状态区域
+            const resultsCard = document.getElementById('resultsCard');
+            resultsCard.classList.remove('hidden');
+            document.getElementById('bookList').innerHTML = '<div class="loading">正在搜索中，请稍候...</div>';
+            
             const sourceIdx = document.getElementById('sourceSelect').value;
             const sourcesToSearch = sourceIdx !== '' ? [enabledSources[parseInt(sourceIdx)]] : enabledSources;
             
             const statusDiv = document.getElementById('searchStatus');
             statusDiv.classList.remove('hidden');
-            statusDiv.innerHTML = sourcesToSearch.map(s => 
-                `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`
-            ).join('');
+            statusDiv.innerHTML = `
+                <div style="margin-bottom:8px;color:rgba(255,255,255,0.7)">
+                    正在搜索 ${sourcesToSearch.length} 个书源...
+                </div>
+                ${sourcesToSearch.slice(0, 10).map(s => 
+                    `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`
+                ).join('')}
+                ${sourcesToSearch.length > 10 ? `<div style="color:rgba(255,255,255,0.5);font-size:0.75rem">还有 ${sourcesToSearch.length - 10} 个书源...</div>` : ''}
+            `;
             
-            const searchPromises = sourcesToSearch.map(source => searchSource(source, keyword));
-            const allResults = await Promise.all(searchPromises);
-            searchResults = allResults.flat();
-            
-            const seen = new Set();
-            searchResults = searchResults.filter(book => {
-                const key = `${book.name}-${book.author}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-            
-            if (searchResults.length > 0) {
-                displayResults(searchResults.slice(0, 50));
-                showToast(`找到 ${searchResults.length} 个结果`);
-            } else {
-                showToast('未找到结果', true);
+            try {
+                // 设置总超时
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('搜索超时')), 60000)
+                );
+                
+                const searchPromise = Promise.all(sourcesToSearch.map(source => searchSource(source, keyword)));
+                
+                const allResults = await Promise.race([searchPromise, timeoutPromise]);
+                searchResults = allResults.flat();
+                
+                const seen = new Set();
+                searchResults = searchResults.filter(book => {
+                    const key = `${book.name}-${book.author}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+                
+                if (searchResults.length > 0) {
+                    displayResults(searchResults.slice(0, 50));
+                    showToast(`找到 ${searchResults.length} 个结果`);
+                } else {
+                    document.getElementById('bookList').innerHTML = '<div class="loading">未找到相关结果，请尝试其他关键词</div>';
+                    showToast('未找到结果', true);
+                }
+            } catch (err) {
+                document.getElementById('bookList').innerHTML = `<div class="loading" style="color:#e94560">搜索出错: ${err.message}</div>`;
+                showToast('搜索出错: ' + err.message, true);
             }
             
             btn.disabled = false;
