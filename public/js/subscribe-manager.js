@@ -146,6 +146,10 @@ class SubscribeManager {
     
     /**
      * 获取订阅内容
+     * 支持三种格式：
+     * 1. 单个书源对象: {bookSourceName: "xxx", ...}
+     * 2. 书源数组: [{书源1}, {书源2}, ...]
+     * 3. 订阅配置: {"sources": ["url1", "url2"], ...}
      */
     async fetchSubscription(url) {
         try {
@@ -178,8 +182,27 @@ class SubscribeManager {
                     content = content.replace(/^\(|\)$/g, '');
                 }
                 
-                sources = JSON.parse(content);
-                console.log('parsed sources count:', Array.isArray(sources) ? sources.length : 1);
+                const parsed = JSON.parse(content);
+                console.log('parsed type:', Array.isArray(parsed) ? 'array' : typeof parsed);
+                
+                // 判断返回内容的类型
+                if (this.isSubscriptionConfig(parsed)) {
+                    // 订阅配置格式 - 需要遍历URL获取书源
+                    console.log('检测到订阅配置格式，开始遍历URL获取书源...');
+                    const result = await this.fetchSourcesFromConfig(parsed);
+                    return result;
+                } else if (Array.isArray(parsed)) {
+                    // 书源数组
+                    sources = parsed;
+                    console.log('检测到书源数组，数量:', sources.length);
+                } else if (this.isValidBookSource(parsed)) {
+                    // 单个书源对象
+                    sources = [parsed];
+                    console.log('检测到单个书源对象');
+                } else {
+                    console.error('无法识别的内容格式:', parsed);
+                    return { success: false, error: '无法识别的内容格式' };
+                }
                 
             } catch (e) {
                 console.error('解析书源失败:', e);
@@ -187,9 +210,9 @@ class SubscribeManager {
                 return { success: false, error: '解析书源失败: ' + e.message };
             }
             
-            if (!Array.isArray(sources)) {
-                sources = [sources];
-            }
+            // 过滤有效的书源
+            sources = sources.filter(s => this.isValidBookSource(s));
+            console.log('有效书源数量:', sources.length);
             
             // 提取名称
             let name = '';
@@ -210,6 +233,113 @@ class SubscribeManager {
             console.error('fetchSubscription error:', e);
             return { success: false, error: e.message };
         }
+    }
+    
+    /**
+     * 判断是否为订阅配置格式
+     * 订阅配置格式: {"sources": ["url1", "url2"], ...}
+     */
+    isSubscriptionConfig(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            return false;
+        }
+        
+        // 检查是否有 sources 字段且为数组
+        if (data.sources && Array.isArray(data.sources)) {
+            // 进一步检查 sources 数组元素是否为 URL 字符串
+            if (data.sources.length > 0 && typeof data.sources[0] === 'string') {
+                // 检查是否看起来像 URL
+                const firstItem = data.sources[0];
+                if (firstItem.startsWith('http://') || firstItem.startsWith('https://')) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 判断是否为有效的书源对象
+     */
+    isValidBookSource(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            return false;
+        }
+        // 必须有书源名称和URL
+        return !!(data.bookSourceName && data.bookSourceUrl);
+    }
+    
+    /**
+     * 从订阅配置中获取书源
+     */
+    async fetchSourcesFromConfig(config) {
+        const urls = config.sources || [];
+        const allSources = [];
+        const errors = [];
+        
+        console.log(`订阅配置包含 ${urls.length} 个URL`);
+        
+        for (let i = 0; i < urls.length; i++) {
+            const sourceUrl = urls[i];
+            console.log(`正在获取第 ${i + 1}/${urls.length} 个URL: ${sourceUrl}`);
+            
+            try {
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(sourceUrl)}`;
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    errors.push(`${sourceUrl}: ${data.error}`);
+                    console.error(`获取 ${sourceUrl} 失败:`, data.error);
+                    continue;
+                }
+                
+                let content = data.body;
+                if (content && content.startsWith('(')) {
+                    content = content.replace(/^\(|\)$/g, '');
+                }
+                
+                const parsed = JSON.parse(content);
+                let sources = [];
+                
+                if (Array.isArray(parsed)) {
+                    sources = parsed;
+                } else if (this.isValidBookSource(parsed)) {
+                    sources = [parsed];
+                }
+                
+                // 过滤有效书源
+                sources = sources.filter(s => this.isValidBookSource(s));
+                console.log(`从 ${sourceUrl} 获取到 ${sources.length} 个书源`);
+                
+                allSources.push(...sources);
+                
+            } catch (e) {
+                errors.push(`${sourceUrl}: ${e.message}`);
+                console.error(`获取 ${sourceUrl} 异常:`, e);
+            }
+        }
+        
+        // 提取名称
+        let name = config.name || '';
+        if (!name && allSources.length > 0 && allSources[0].bookSourceGroup) {
+            name = allSources[0].bookSourceGroup;
+        }
+        
+        if (allSources.length === 0) {
+            return {
+                success: false,
+                error: errors.length > 0 ? errors.join('; ') : '没有获取到任何书源'
+            };
+        }
+        
+        return {
+            success: true,
+            sources: allSources,
+            name: name,
+            warnings: errors.length > 0 ? errors : null
+        };
     }
     
     /**

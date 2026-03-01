@@ -101,6 +101,12 @@ class HtmlParser {
     
     /**
      * 解析章节内容 - 改进版，返回详细结果
+     * 支持多种选择器格式：
+     * - #content@html: 获取id为content的元素的innerHTML
+     * - .content@text: 获取class为content的第一个元素的textContent
+     * - .content@texts: 获取所有class为content的元素的textContent（合并）
+     * - p@html: 获取第一个p元素的innerHTML
+     * - p@htmls: 获取所有p元素的innerHTML（合并）
      */
     static parseContent(html, rule, baseUrl) {
         const result = {
@@ -143,34 +149,68 @@ class HtmlParser {
                 // 处理属性选择器
                 if (trimmed.includes('@')) {
                     const parts = trimmed.split('@');
-                    const el = doc.querySelector(parts[0]);
+                    const cssSelector = parts[0];
+                    const attr = parts[1];
                     
                     result.debug.selector = trimmed;
-                    result.debug.found = !!el;
                     
-                    if (el) {
-                        const attr = parts[1];
-                        if (attr === 'html' || attr === 'innerHTML') {
-                            const raw = el.innerHTML;
-                            result.content = this.cleanContent(raw);
-                            result.debug.rawLength = raw.length;
-                            result.success = true;
-                            return result;
-                        } else if (attr === 'text' || attr === 'textContent') {
-                            const raw = el.textContent;
+                    // 检查是否需要获取所有匹配元素（@texts, @htmls）
+                    const getAll = attr === 'texts' || attr === 'htmls' || attr === 'textAll' || attr === 'htmlAll';
+                    const actualAttr = attr.replace(/s$|All$/, '').replace('text', 'textContent').replace('html', 'innerHTML');
+                    
+                    if (getAll) {
+                        // 获取所有匹配元素
+                        const elements = doc.querySelectorAll(cssSelector);
+                        result.debug.foundCount = elements.length;
+                        
+                        if (elements.length > 0) {
+                            const contents = [];
+                            elements.forEach(el => {
+                                if (actualAttr === 'textContent') {
+                                    contents.push(el.textContent);
+                                } else if (actualAttr === 'innerHTML') {
+                                    contents.push(el.innerHTML);
+                                } else {
+                                    const attrValue = el.getAttribute(actualAttr);
+                                    if (attrValue) contents.push(attrValue);
+                                }
+                            });
+                            
+                            const raw = contents.join('\n');
                             result.content = this.cleanContent(raw);
                             result.debug.rawLength = raw.length;
                             result.success = true;
                             return result;
                         }
-                        const attrValue = el.getAttribute(attr);
-                        if (attrValue) {
-                            result.content = this.cleanContent(attrValue);
-                            result.success = true;
-                            return result;
+                    } else {
+                        // 获取单个元素
+                        const el = doc.querySelector(cssSelector);
+                        result.debug.found = !!el;
+                        
+                        if (el) {
+                            if (attr === 'html' || attr === 'innerHTML') {
+                                const raw = el.innerHTML;
+                                result.content = this.cleanContent(raw);
+                                result.debug.rawLength = raw.length;
+                                result.success = true;
+                                return result;
+                            } else if (attr === 'text' || attr === 'textContent') {
+                                const raw = el.textContent;
+                                result.content = this.cleanContent(raw);
+                                result.debug.rawLength = raw.length;
+                                result.success = true;
+                                return result;
+                            }
+                            const attrValue = el.getAttribute(attr);
+                            if (attrValue) {
+                                result.content = this.cleanContent(attrValue);
+                                result.success = true;
+                                return result;
+                            }
                         }
                     }
                 } else {
+                    // 没有属性选择器，默认获取innerHTML
                     const el = doc.querySelector(trimmed);
                     
                     result.debug.selector = trimmed;

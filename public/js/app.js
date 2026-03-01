@@ -572,13 +572,21 @@ class App {
         if (!selectDiv) return;
         
         if (sources.length === 0) {
-            selectDiv.innerHTML = `
-                <div class="empty">
-                    <p>没有支持发现的书源</p>
+            let hintHtml = '';
+            if (allSources.length === 0) {
+                hintHtml = `
+                    <p>📖 请先导入书源</p>
+                    <p class="hint">可以通过"书源管理"导入书源，或添加订阅</p>
+                `;
+            } else {
+                hintHtml = `
+                    <p>📚 当前没有支持"发现"功能的书源</p>
                     <p class="hint">总书源: ${allSources.length} 个</p>
-                    <p class="hint">支持发现的书源需要有 exploreUrl 属性</p>
-                </div>
-            `;
+                    <p class="hint">💡 提示：支持"发现"的书源需要有 exploreUrl 属性</p>
+                    <p class="hint">您可以尝试导入更多书源，或使用搜索功能</p>
+                `;
+            }
+            selectDiv.innerHTML = `<div class="empty">${hintHtml}</div>`;
             return;
         }
         
@@ -596,6 +604,14 @@ class App {
     }
     
     async loadExplore() {
+        const selectElement = document.getElementById('exploreSource');
+        const sourceUrl = selectElement ? selectElement.value : '';
+        
+        if (!sourceUrl) {
+            this.showToast('请选择书源', true);
+            return;
+        }
+        
         this.currentExploreSource = this.sourceManager.getSource(sourceUrl);
         if (!this.currentExploreSource || !this.currentExploreSource.exploreUrl) {
             this.showToast('书源不支持发现', true);
