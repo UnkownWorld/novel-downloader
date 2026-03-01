@@ -2,14 +2,7 @@
   "name": "novel-downloader",
   "version": "1.0.0",
   "description": "基于Legado书源的小说下载器Web版",
-  "scripts": {
-    "build": "echo 'Build complete'"
-  },
   "keywords": ["novel", "downloader", "legado", "cloudflare"],
   "author": "",
-  "license": "MIT",
-  "devDependencies": {
-    "wrangler": "^3.0.0",
-    "@cloudflare/workers-types": "^4.0.0"
-  }
+  "license": "MIT"
 }
