@@ -455,21 +455,24 @@ class App {
                     <p>${this.escapeHtml(book.intro || '暂无简介')}</p>
                 </div>
                 
+                <!-- 主要操作：阅读 -->
+                <div class="book-actions-main">
+                    <button class="btn btn-primary btn-large" onclick="app.startReading()">
+                        📖 开始阅读
+                    </button>
+                </div>
+                
+                <!-- 次要操作 -->
                 <div class="book-actions">
-                    <button class="btn btn-primary" onclick="app.startReading()">📖 开始阅读</button>
                     <button class="btn btn-secondary" onclick="app.getChaptersAndDownload()">
-                        ${inShelf ? '更新下载' : '开始下载'}
+                        📥 ${inShelf ? '更新下载' : '下载全书'}
                     </button>
                     ${inShelf ? 
                         `<button class="btn btn-secondary" onclick="app.removeFromShelf()">移出书架</button>` :
                         `<button class="btn btn-secondary" onclick="app.addToShelf()">加入书架</button>`
                     }
-                    <button class="btn btn-secondary" onclick="app.showChangeSource()">
-                        换源
-                    </button>
-                    <button class="btn btn-secondary" onclick="app.closeModal()">
-                        关闭
-                    </button>
+                    <button class="btn btn-secondary" onclick="app.showChangeSource()">换源</button>
+                    <button class="btn btn-secondary" onclick="app.closeModal()">关闭</button>
                 </div>
             </div>
         `;
@@ -1331,18 +1334,30 @@ class App {
         const url = prompt('请输入订阅URL:');
         if (!url) return;
         
+        this.showToast('正在获取订阅...');
+        
         try {
             const result = await this.subscribeManager.addSubscription(url);
             
             if (result.success) {
-                await this.sourceManager.addSources(result.sources);
-                this.showToast(`订阅成功，导入 ${result.sources.length} 个书源`);
-                this.render();
-                this.updateStats();
+                if (result.sources && result.sources.length > 0) {
+                    const addResult = await this.sourceManager.addSources(result.sources);
+                    
+                    this.showToast(`订阅成功！导入 ${result.sources.length} 个书源（新增 ${addResult.added}，更新 ${addResult.updated}）`);
+                    
+                    // 立即刷新所有相关界面
+                    this.renderSourceList();
+                    this.renderExploreSources();
+                    this.updateStats();
+                    this.render();
+                } else {
+                    this.showToast('订阅成功，但没有获取到书源', true);
+                }
             } else {
                 throw new Error(result.error || '订阅失败');
             }
         } catch (e) {
+            console.error('订阅失败:', e);
             this.showToast('订阅失败: ' + e.message, true);
         }
     }
@@ -1352,23 +1367,25 @@ class App {
             const result = await this.subscribeManager.updateSubscription(id);
             
             if (result.success) {
-                await this.sourceManager.addSources(result.sources);
-                this.showToast(`刷新成功，更新 ${result.sources.length} 个书源`);
-                this.render();
-                this.updateStats();
+                if (result.sources && result.sources.length > 0) {
+                    const addResult = await this.sourceManager.addSources(result.sources);
+                    
+                    this.showToast(`刷新成功！更新 ${result.sources.length} 个书源（新增 ${addResult.added}，更新 ${addResult.updated}）`);
+                    
+                    // 立即刷新所有相关界面
+                    this.renderSourceList();
+                    this.renderExploreSources();
+                    this.updateStats();
+                    this.render();
+                } else {
+                    this.showToast('刷新成功，但没有获取到书源');
+                }
             } else {
                 throw new Error(result.error || '刷新失败');
             }
         } catch (e) {
+            console.error('刷新失败:', e);
             this.showToast('刷新失败: ' + e.message, true);
-        }
-    }
-    
-    removeSubscription(id) {
-        if (confirm('确定删除此订阅？')) {
-            this.subscribeManager.removeSubscription(id);
-            this.render();
-            this.showToast('已删除订阅');
         }
     }
     

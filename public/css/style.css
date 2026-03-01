@@ -203,6 +203,12 @@ select option {
     font-size: 0.8rem;
 }
 
+.btn-large {
+    padding: 15px 30px;
+    font-size: 1.1rem;
+    width: 100%;
+}
+
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -445,6 +451,12 @@ select option {
     line-height: 1.8;
 }
 
+/* 主要操作 */
+.book-actions-main {
+    margin-bottom: 15px;
+}
+
+/* 次要操作 */
 .book-actions {
     display: flex;
     gap: 10px;

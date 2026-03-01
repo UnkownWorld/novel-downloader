@@ -14,17 +14,14 @@ class ReaderManager {
         this.settings = {
             fontSize: 18,
             lineHeight: 1.8,
-            theme: 'dark',  // dark, light, sepia
-            fontFamily: 'serif',  // serif, sans-serif
+            theme: 'dark',
+            fontFamily: 'serif',
             padding: 20
         };
         
         this.loadSettings();
     }
     
-    /**
-     * 加载设置
-     */
     loadSettings() {
         try {
             const saved = localStorage.getItem('readerSettings');
@@ -36,9 +33,6 @@ class ReaderManager {
         }
     }
     
-    /**
-     * 保存设置
-     */
     saveSettings() {
         try {
             localStorage.setItem('readerSettings', JSON.stringify(this.settings));
@@ -47,9 +41,6 @@ class ReaderManager {
         }
     }
     
-    /**
-     * 初始化阅读器
-     */
     async init(book, source, chapters, startIndex = 0) {
         this.currentBook = book;
         this.currentSource = source;
@@ -59,9 +50,6 @@ class ReaderManager {
         await this.loadChapter(startIndex);
     }
     
-    /**
-     * 加载章节
-     */
     async loadChapter(index) {
         if (index < 0 || index >= this.chapters.length) {
             return false;
@@ -70,12 +58,21 @@ class ReaderManager {
         this.currentChapterIndex = index;
         const chapter = this.chapters[index];
         
-        // 检查缓存
         const cacheKey = `content_${chapter.url}`;
-        let content = app.cacheManager?.get(cacheKey);
+        let cachedData = app.cacheManager?.get(cacheKey);
+        let contentStr = '';
         
-        if (!content) {
-            // 从服务器获取
+        // 检查缓存
+        if (cachedData) {
+            if (typeof cachedData === 'object' && cachedData.content) {
+                contentStr = cachedData.content;
+            } else if (typeof cachedData === 'string') {
+                contentStr = cachedData;
+            }
+        }
+        
+        // 没有缓存则请求
+        if (!contentStr) {
             try {
                 const response = await fetch('/api/content', {
                     method: 'POST',
@@ -86,22 +83,29 @@ class ReaderManager {
                 const data = await response.json();
                 
                 if (data.success && data.html) {
-                    content = HtmlParser.parseContent(
+                    const parseResult = HtmlParser.parseContent(
                         data.html,
                         this.currentSource.ruleContent,
                         data.baseUrl
                     );
                     
-                    // 缓存内容
-                    app.cacheManager?.set(cacheKey, content);
+                    if (parseResult.success && parseResult.content) {
+                        contentStr = parseResult.content;
+                        // 缓存对象格式
+                        app.cacheManager?.set(cacheKey, { content: contentStr, success: true });
+                    } else {
+                        contentStr = `[解析失败: ${parseResult.error || '未知错误'}]`;
+                    }
+                } else {
+                    contentStr = `[获取失败: ${data.error || 'HTTP错误'}]`;
                 }
             } catch (e) {
                 console.error('加载章节失败:', e);
-                content = '加载失败，请重试';
+                contentStr = '加载失败，请重试';
             }
         }
         
-        this.content = content || '内容为空';
+        this.content = contentStr || '内容为空';
         
         // 更新阅读进度
         if (app.bookshelfManager && this.currentBook) {
@@ -115,9 +119,6 @@ class ReaderManager {
         return true;
     }
     
-    /**
-     * 上一章
-     */
     async prevChapter() {
         if (this.currentChapterIndex > 0) {
             return await this.loadChapter(this.currentChapterIndex - 1);
@@ -125,9 +126,6 @@ class ReaderManager {
         return false;
     }
     
-    /**
-     * 下一章
-     */
     async nextChapter() {
         if (this.currentChapterIndex < this.chapters.length - 1) {
             return await this.loadChapter(this.currentChapterIndex + 1);
@@ -135,23 +133,14 @@ class ReaderManager {
         return false;
     }
     
-    /**
-     * 跳转到指定章节
-     */
     async goToChapter(index) {
         return await this.loadChapter(index);
     }
     
-    /**
-     * 获取当前章节信息
-     */
     getCurrentChapter() {
         return this.chapters[this.currentChapterIndex];
     }
     
-    /**
-     * 获取阅读进度
-     */
     getProgress() {
         return {
             current: this.currentChapterIndex + 1,
@@ -160,17 +149,11 @@ class ReaderManager {
         };
     }
     
-    /**
-     * 更新设置
-     */
     updateSettings(newSettings) {
         this.settings = { ...this.settings, ...newSettings };
         this.saveSettings();
     }
     
-    /**
-     * 获取主题样式
-     */
     getThemeStyle() {
         const themes = {
             dark: {
@@ -198,9 +181,6 @@ class ReaderManager {
         return themes[this.settings.theme] || themes.dark;
     }
     
-    /**
-     * 获取字体样式
-     */
     getFontStyle() {
         const fonts = {
             serif: 'Georgia, "Times New Roman", serif',
