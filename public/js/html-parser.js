@@ -240,6 +240,57 @@ class HtmlParser {
     }
     
     /**
+     * 解析章节内容 - 支持JS规则
+     * @param {string} html - HTML内容
+     * @param {object} rule - 规则对象
+     * @param {string} baseUrl - 基础URL
+     * @returns {Promise<object>} 解析结果
+     */
+    static async parseContentWithJs(html, rule, baseUrl) {
+        const result = {
+            success: false,
+            content: '',
+            error: '',
+            debug: {}
+        };
+        
+        if (!rule || !rule.content) {
+            result.error = '没有内容规则';
+            return result;
+        }
+        
+        const ruleContent = rule.content;
+        result.debug.rule = ruleContent;
+        
+        // 检查是否包含JS规则
+        if (ruleContent.includes('<js>') || ruleContent.includes('@js:')) {
+            try {
+                // 创建JS执行器
+                const executor = new JsRuleExecutor();
+                
+                // 执行JS规则
+                const jsResult = await executor.parseAndExecute(ruleContent, {
+                    baseUrl: baseUrl,
+                    html: html
+                });
+                
+                if (jsResult) {
+                    result.content = this.cleanContent(jsResult);
+                    result.success = true;
+                    result.debug.jsExecuted = true;
+                    return result;
+                }
+            } catch (e) {
+                console.error('JS规则执行失败:', e);
+                result.error = 'JS执行失败: ' + e.message;
+            }
+        }
+        
+        // 如果没有JS规则或JS执行失败，使用普通解析
+        return this.parseContent(html, rule, baseUrl);
+    }
+    
+    /**
      * 获取元素文本
      */
     static getElementText(parent, selector) {

@@ -1037,7 +1037,8 @@ class App {
                     const data = await response.json();
                     
                     if (data.success && data.html) {
-                        const parseResult = HtmlParser.parseContent(
+                        // 使用支持JS规则的解析方法
+                        const parseResult = await HtmlParser.parseContentWithJs(
                             data.html, 
                             this.currentSource.ruleContent, 
                             data.baseUrl
@@ -2062,8 +2063,8 @@ App.prototype.debugChapter = async function() {
             throw new Error(contentData.error || '获取内容失败');
         }
         
-        // 解析内容
-        const parseResult = HtmlParser.parseContent(
+        // 解析内容 - 使用支持JS规则的方法
+        const parseResult = await HtmlParser.parseContentWithJs(
             contentData.html,
             this.currentSource.ruleContent,
             contentData.baseUrl

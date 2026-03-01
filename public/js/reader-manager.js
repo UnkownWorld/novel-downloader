@@ -83,7 +83,8 @@ class ReaderManager {
                 const data = await response.json();
                 
                 if (data.success && data.html) {
-                    const parseResult = HtmlParser.parseContent(
+                    // 使用支持JS规则的解析方法
+                    const parseResult = await HtmlParser.parseContentWithJs(
                         data.html,
                         this.currentSource.ruleContent,
                         data.baseUrl
