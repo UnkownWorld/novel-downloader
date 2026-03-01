@@ -1274,7 +1274,7 @@
                     <span>正在测试书源...</span>
                     <button class="btn btn-danger btn-small" onclick="stopTest()">停止测试</button>
                 </div>
-                <div style="font-size:0.8rem;color:rgba(255,255,255,0.6)">测试方法: 访问首页 + 尝试搜索</div>
+                <div style="font-size:0.8rem;color:rgba(255,255,255,0.6)">测试方法: 测试首页可访问性</div>
             `;
             
             const enabledSources = bookSources.filter(s => s.enabled !== false);
@@ -1286,11 +1286,8 @@
             const slowList = [];
             const testResults = [];
             
-            // 测试关键词
-            const testKeyword = '斗罗';
-            
-            // 并发测试，每次最多3个（避免请求过多）
-            const batchSize = 3;
+            // 并发测试，每次最多5个
+            const batchSize = 5;
             for (let i = 0; i < enabledSources.length; i += batchSize) {
                 // 检查是否中断
                 if (testAborted === 'stop') {
@@ -1302,8 +1299,6 @@
                     const testResult = {
                         source,
                         homepageOk: false,
-                        searchOk: false,
-                        hasResults: false,
                         responseTime: 0,
                         error: ''
                     };
@@ -1311,48 +1306,14 @@
                     try {
                         const startTime = Date.now();
                         
-                        // 第一步：测试首页是否可访问
+                        // 只测试首页是否可访问
                         const homeResult = await fetchHtml(source.bookSourceUrl);
                         testResult.homepageOk = homeResult.success;
+                        testResult.responseTime = Date.now() - startTime;
                         
                         if (!homeResult.success) {
                             testResult.error = '首页无法访问';
-                            return testResult;
                         }
-                        
-                        // 第二步：测试搜索功能（如果有searchUrl）
-                        if (source.searchUrl) {
-                            try {
-                                const searchUrl = source.searchUrl
-                                    .replace('{{key}}', encodeURIComponent(testKeyword))
-                                    .replace('{{page}}', '1');
-                                const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
-                                
-                                const searchResult = await fetchHtml(fullUrl);
-                                testResult.searchOk = searchResult.success;
-                                
-                                if (searchResult.success && searchResult.content) {
-                                    // 第三步：检查搜索结果是否有效
-                                    const rule = source.ruleSearch || {};
-                                    const parser = new AnalyzeRule().setContent(searchResult.content, searchResult.url);
-                                    const items = parser.getElements(rule.bookList);
-                                    
-                                    testResult.hasResults = items && items.length > 0;
-                                    
-                                    if (!testResult.hasResults) {
-                                        testResult.error = '搜索无结果';
-                                    }
-                                } else {
-                                    testResult.error = '搜索请求失败';
-                                }
-                            } catch (searchErr) {
-                                testResult.error = '搜索出错: ' + (searchErr.message || '未知错误');
-                            }
-                        } else {
-                            testResult.error = '无搜索地址';
-                        }
-                        
-                        testResult.responseTime = Date.now() - startTime;
                         
                     } catch (e) {
                         testResult.error = e.message || '测试失败';
@@ -1365,10 +1326,9 @@
                 for (const result of results) {
                     testResults.push(result);
                     
-                    // 判断有效性：
-                    // 有效 = 首页可访问 且 (搜索成功且有结果 或 无搜索地址但首页正常)
-                    const isValid = result.homepageOk && (result.hasResults || (result.searchOk && !result.ruleSearch));
-                    const isSlow = result.responseTime > 10000; // 超过10秒算慢
+                    // 简化判断：首页可访问 = 有效
+                    const isValid = result.homepageOk;
+                    const isSlow = result.responseTime > 10000;
                     
                     if (isValid) {
                         valid++;
@@ -1380,6 +1340,7 @@
                         invalid++;
                         invalidList.push({
                             name: result.source.bookSourceName,
+                            url: result.source.bookSourceUrl,
                             error: result.error || '未知错误'
                         });
                     }
@@ -1388,7 +1349,10 @@
                 // 更新进度
                 const progress = Math.min(i + batchSize, total);
                 testStatus.innerHTML = `
-                    <div style="margin-bottom:8px">测试进度: ${progress}/${total}</div>
+                    <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+                        <span>测试进度: ${progress}/${total}</span>
+                        <button class="btn btn-danger btn-small" onclick="stopTest()">停止测试</button>
+                    </div>
                     <div style="color:#00b894">✓ 有效: ${valid}</div>
                     <div style="color:#e94560">✗ 失效: ${invalid}</div>
                     ${slow > 0 ? `<div style="color:#ffc107">⚠ 响应慢: ${slow}</div>` : ''}
@@ -1398,13 +1362,15 @@
             // 显示最终结果
             const invalidNames = invalidList.map(i => i.name);
             testStatus.innerHTML = `
-                <div style="margin-bottom:8px;font-weight:bold">测试完成</div>
+                <div style="margin-bottom:8px;font-weight:bold">
+                    ${testAborted === 'stop' ? '测试已中断' : '测试完成'}
+                </div>
                 <div style="color:#00b894">✓ 有效书源: ${valid}</div>
                 <div style="color:#e94560">✗ 失效书源: ${invalid}</div>
                 ${slow > 0 ? `<div style="color:#ffc107">⚠ 响应较慢: ${slow}</div>` : ''}
                 ${invalid > 0 ? `
                     <div style="margin-top:8px;font-size:0.75rem;color:rgba(255,255,255,0.6);max-height:100px;overflow-y:auto">
-                        失效原因:<br>
+                        失效书源:<br>
                         ${invalidList.slice(0, 10).map(i => `• ${i.name}: ${i.error}`).join('<br>')}
                         ${invalid > 10 ? `<br>...还有 ${invalid - 10} 个` : ''}
                     </div>
@@ -1416,7 +1382,6 @@
             window.invalidSources = invalidNames;
             window.testResults = testResults;
             
-            // 显示中断或完成状态
             if (testAborted === 'stop') {
                 showToast(`测试已中断: ${valid} 个有效, ${invalid} 个失效`);
             } else {
@@ -1434,6 +1399,7 @@
                 <div style="margin-bottom:8px">正在停止测试...</div>
             `;
         }
+        
         
         // 删除失效书源
         function removeInvalidSources() {
