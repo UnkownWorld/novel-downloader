@@ -101,6 +101,11 @@ body {
     font-weight: 600;
 }
 
+.card-actions {
+    display: flex;
+    gap: 8px;
+}
+
 /* 表单元素 */
 .form-group {
     margin-bottom: 15px;
@@ -738,6 +743,12 @@ select option {
     color: rgba(255, 255, 255, 0.3);
 }
 
+.empty ul {
+    text-align: left;
+    margin-top: 10px;
+    padding-left: 20px;
+}
+
 .error {
     text-align: center;
     padding: 40px;
@@ -746,6 +757,12 @@ select option {
 
 .hidden {
     display: none !important;
+}
+
+.hint {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.8rem;
+    margin-top: 10px;
 }
 
 /* 调试样式 */
@@ -810,6 +827,130 @@ select option {
     gap: 10px;
     justify-content: center;
     margin-top: 20px;
+}
+
+/* 换书源样式 */
+.change-source-progress {
+    text-align: center;
+    padding: 30px;
+}
+
+.change-source-progress h3 {
+    margin-bottom: 15px;
+}
+
+.change-source-progress p {
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 20px;
+}
+
+.change-source-result {
+    padding: 10px 0;
+}
+
+.change-source-result h3 {
+    margin-bottom: 10px;
+}
+
+.change-source-hint {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+}
+
+.match-section {
+    margin-bottom: 20px;
+}
+
+.match-section h4 {
+    margin-bottom: 10px;
+    padding-left: 10px;
+    border-left: 3px solid #e94560;
+}
+
+.change-source-result .source-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.change-source-result .source-item:hover {
+    border-color: #e94560;
+    background: rgba(233, 69, 96, 0.1);
+}
+
+.change-source-result .source-item.current {
+    border-color: #00b894;
+    background: rgba(0, 184, 148, 0.1);
+}
+
+.change-source-result .source-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.change-source-result .source-name {
+    font-weight: 500;
+}
+
+.change-source-result .source-latest,
+.change-source-result .source-author,
+.change-source-result .source-from {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.current-badge {
+    background: #00b894;
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+}
+
+.change-source-actions {
+    margin-top: 20px;
+    text-align: center;
+}
+
+/* 订阅列表改进 */
+.subscribe-list .subscribe-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.subscribe-info {
+    flex: 1;
+}
+
+.subscribe-name {
+    font-weight: 500;
+    display: block;
+}
+
+.subscribe-meta {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 3px;
+}
+
+.subscribe-actions {
+    display: flex;
+    gap: 8px;
 }
 
 /* 响应式 */

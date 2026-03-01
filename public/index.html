@@ -94,9 +94,11 @@
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">书源列表</span>
-                    <button class="btn btn-small btn-secondary" onclick="app.testSources()">
-                        🧪 测试书源
-                    </button>
+                    <div class="card-actions">
+                        <button class="btn btn-small btn-secondary" onclick="app.testSources()">
+                            🧪 测试
+                        </button>
+                    </div>
                 </div>
                 <div id="testStatus" class="hidden"></div>
                 <div id="sourceList" class="source-list">
@@ -118,13 +120,17 @@
         <div id="subscribeTab" class="tab-content">
             <div class="card">
                 <div class="card-header">
-                    <span class="card-title">添加订阅</span>
+                    <span class="card-title">订阅管理</span>
                 </div>
                 <div class="form-row">
                     <button class="btn btn-primary" onclick="app.addSubscription()">
                         ➕ 添加订阅
                     </button>
+                    <button class="btn btn-secondary" onclick="app.syncAllSubscriptions()">
+                        🔄 同步全部
+                    </button>
                 </div>
+                <p class="hint">订阅的书源会自动同步到书源列表</p>
             </div>
             
             <div class="card">
@@ -148,7 +154,7 @@
                     <input type="number" id="searchConcurrent" value="10" min="1" max="50">
                 </div>
                 <div class="form-group">
-                    <label>下载并发数</label>
+                    <label>缓存并发数</label>
                     <input type="number" id="downloadConcurrent" value="10" min="1" max="50">
                 </div>
                 <div class="form-group">
@@ -173,7 +179,7 @@
                         开启调试模式（显示详细搜索信息）
                     </label>
                 </div>
-                <p class="hint">开启后搜索结果会显示每个书源的请求状态，方便排查问题</p>
+                <p class="hint">开启后搜索结果会显示每个书源的请求状态</p>
             </div>
             
             <div class="card">

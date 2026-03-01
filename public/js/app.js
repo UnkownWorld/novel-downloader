@@ -465,7 +465,7 @@ class App {
                 <!-- 次要操作 -->
                 <div class="book-actions">
                     <button class="btn btn-secondary" onclick="app.getChaptersAndDownload()">
-                        📥 ${inShelf ? '更新下载' : '下载全书'}
+                        📥 ${inShelf ? '更新缓存' : '缓存全书'}
                     </button>
                     ${inShelf ? 
                         `<button class="btn btn-secondary" onclick="app.removeFromShelf()">移出书架</button>` :
@@ -691,58 +691,121 @@ class App {
         if (!this.currentBook) return;
         
         const modalContent = document.getElementById('bookModalContent');
-        modalContent.innerHTML = '<div class="loading">搜索其他书源...</div>';
+        modalContent.innerHTML = '<div class="loading">正在搜索其他书源...</div>';
         
         try {
-            const sources = this.sourceManager.getEnabledSources().filter(
+            // 获取所有启用的书源
+            const sources = this.sourceManager.getEnabledSources();
+            
+            if (sources.length === 0) {
+                modalContent.innerHTML = '<div class="error">没有可用的书源</div>';
+                return;
+            }
+            
+            // 排除当前书源
+            const otherSources = sources.filter(
                 s => s.bookSourceUrl !== this.currentSource.bookSourceUrl
             );
             
-            if (sources.length === 0) {
+            if (otherSources.length === 0) {
                 modalContent.innerHTML = '<div class="error">没有其他可用书源</div>';
                 return;
             }
             
-            const response = await fetch('/api/search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    keyword: this.currentBook.name,
-                    sources: sources.slice(0, 10),
-                    page: 1
-                })
-            });
+            // 显示搜索进度
+            modalContent.innerHTML = `
+                <div class="change-source-progress">
+                    <h3>🔄 换书源</h3>
+                    <p>正在用 "${this.escapeHtml(this.currentBook.name)}" 在 ${otherSources.length} 个书源中搜索...</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="changeSourceProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
             
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || '搜索失败');
-            }
-            
+            // 分批搜索
+            const batchSize = 10;
             const allBooks = [];
-            for (const result of data.results) {
-                if (result.success && result.html) {
-                    const books = HtmlParser.parseSearchResult(
-                        result.html, 
-                        result.ruleSearch, 
-                        result.baseUrl,
-                        { bookSourceUrl: result.source, bookSourceName: result.sourceName }
-                    );
-                    allBooks.push(...books);
+            let completed = 0;
+            
+            for (let i = 0; i < otherSources.length; i += batchSize) {
+                const batch = otherSources.slice(i, i + batchSize);
+                
+                try {
+                    const response = await fetch('/api/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            keyword: this.currentBook.name,
+                            sources: batch,
+                            page: 1
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        for (const result of data.results) {
+                            if (result.success && result.html) {
+                                const books = HtmlParser.parseSearchResult(
+                                    result.html, 
+                                    result.ruleSearch, 
+                                    result.baseUrl,
+                                    { bookSourceUrl: result.source, bookSourceName: result.sourceName }
+                                );
+                                allBooks.push(...books);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('搜索批次失败:', e);
+                }
+                
+                completed += batch.length;
+                const progress = Math.min(100, (completed / otherSources.length * 100));
+                const progressBar = document.getElementById('changeSourceProgress');
+                if (progressBar) {
+                    progressBar.style.width = progress + '%';
                 }
             }
             
-            const sameBooks = allBooks.filter(b => 
-                b.name === this.currentBook.name && 
-                (!this.currentBook.author || b.author === this.currentBook.author)
-            );
+            // 匹配同名书籍
+            const bookName = this.currentBook.name.toLowerCase().trim();
+            const bookAuthor = (this.currentBook.author || '').toLowerCase().trim();
             
-            if (sameBooks.length === 0) {
-                modalContent.innerHTML = '<div class="empty">没有找到其他来源</div>';
+            // 完全匹配
+            const exactMatches = allBooks.filter(b => {
+                const name = (b.name || '').toLowerCase().trim();
+                const author = (b.author || '').toLowerCase().trim();
+                return name === bookName && (!bookAuthor || author === bookAuthor || author.includes(bookAuthor) || bookAuthor.includes(author));
+            });
+            
+            // 模糊匹配（书名相似）
+            const fuzzyMatches = allBooks.filter(b => {
+                const name = (b.name || '').toLowerCase().trim();
+                if (name === bookName) return false;
+                return name.includes(bookName) || bookName.includes(name);
+            });
+            
+            if (exactMatches.length === 0 && fuzzyMatches.length === 0) {
+                modalContent.innerHTML = `
+                    <div class="change-source-result">
+                        <h3>🔄 换书源</h3>
+                        <div class="empty">
+                            <p>没有找到其他来源</p>
+                            <p class="hint">可能原因：</p>
+                            <ul>
+                                <li>其他书源没有这本书</li>
+                                <li>书名在不同网站有差异</li>
+                            </ul>
+                        </div>
+                        <button class="btn btn-secondary" onclick="app.renderBookDetail(app.currentBook)">返回</button>
+                    </div>
+                `;
                 return;
             }
             
-            this.renderChangeSourceList(sameBooks);
+            this.renderChangeSourceList(exactMatches, fuzzyMatches);
             
         } catch (e) {
             console.error('换源失败:', e);
@@ -750,21 +813,71 @@ class App {
         }
     }
     
-    renderChangeSourceList(books) {
+    renderChangeSourceList(exactMatches, fuzzyMatches) {
         const modalContent = document.getElementById('bookModalContent');
         
-        let html = `<div class="change-source"><h3>选择其他来源 (${books.length})</h3><div class="source-list">`;
+        let html = `
+            <div class="change-source-result">
+                <h3>🔄 换书源</h3>
+                <p class="change-source-hint">点击选择新的书源</p>
+        `;
         
-        for (const book of books) {
+        // 完全匹配
+        if (exactMatches.length > 0) {
             html += `
-                <div class="source-item" onclick="app.changeSource('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
-                    <span class="source-name">${this.escapeHtml(book.originName)}</span>
-                    <span class="source-latest">${this.escapeHtml(book.lastChapter || '')}</span>
-                </div>
+                <div class="match-section">
+                    <h4>✅ 完全匹配 (${exactMatches.length})</h4>
+                    <div class="source-list">
             `;
+            
+            for (const book of exactMatches) {
+                const isCurrent = book.origin === this.currentSource?.bookSourceUrl;
+                html += `
+                    <div class="source-item ${isCurrent ? 'current' : ''}" 
+                         onclick="app.changeSource('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
+                        <div class="source-info">
+                            <span class="source-name">${this.escapeHtml(book.originName)}</span>
+                            ${book.lastChapter ? `<span class="source-latest">最新: ${this.escapeHtml(book.lastChapter)}</span>` : ''}
+                        </div>
+                        ${isCurrent ? '<span class="current-badge">当前</span>' : ''}
+                    </div>
+                `;
+            }
+            
+            html += '</div></div>';
         }
         
-        html += '</div></div>';
+        // 模糊匹配
+        if (fuzzyMatches.length > 0) {
+            html += `
+                <div class="match-section">
+                    <h4>🔍 相似结果 (${fuzzyMatches.length})</h4>
+                    <div class="source-list">
+            `;
+            
+            for (const book of fuzzyMatches.slice(0, 20)) {
+                html += `
+                    <div class="source-item" 
+                         onclick="app.changeSource('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
+                        <div class="source-info">
+                            <span class="source-name">${this.escapeHtml(book.name)}</span>
+                            <span class="source-author">${this.escapeHtml(book.author || '未知作者')}</span>
+                            <span class="source-from">来源: ${this.escapeHtml(book.originName)}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div></div>';
+        }
+        
+        html += `
+                <div class="change-source-actions">
+                    <button class="btn btn-secondary" onclick="app.renderBookDetail(app.currentBook)">返回</button>
+                </div>
+            </div>
+        `;
+        
         modalContent.innerHTML = html;
     }
     
@@ -1391,6 +1504,43 @@ class App {
             console.error('刷新失败:', e);
             this.showToast('刷新失败: ' + e.message, true);
         }
+    }
+    
+    
+    async syncAllSubscriptions() {
+        const subscriptions = this.subscribeManager.getAllSubscriptions();
+        
+        if (subscriptions.length === 0) {
+            this.showToast('没有订阅需要同步');
+            return;
+        }
+        
+        this.showToast('开始同步所有订阅...');
+        
+        let totalAdded = 0;
+        let totalUpdated = 0;
+        
+        for (const sub of subscriptions) {
+            try {
+                const result = await this.subscribeManager.updateSubscription(sub.id);
+                
+                if (result.success && result.sources && result.sources.length > 0) {
+                    const addResult = await this.sourceManager.addSources(result.sources);
+                    totalAdded += addResult.added;
+                    totalUpdated += addResult.updated;
+                }
+            } catch (e) {
+                console.error(`同步订阅 ${sub.name} 失败:`, e);
+            }
+        }
+        
+        // 刷新界面
+        this.renderSourceList();
+        this.renderExploreSources();
+        this.updateStats();
+        this.render();
+        
+        this.showToast(`同步完成！新增 ${totalAdded} 个，更新 ${totalUpdated} 个书源`);
     }
     
     clearAllData() {
