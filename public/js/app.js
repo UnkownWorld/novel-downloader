@@ -25,6 +25,7 @@ class App {
         
         // 调试模式
         this.debugMode = false;
+        this.readerManager = null;
         this.lastSearchResults = [];
         
         this.config = {
@@ -455,7 +456,8 @@ class App {
                 </div>
                 
                 <div class="book-actions">
-                    <button class="btn btn-primary" onclick="app.getChaptersAndDownload()">
+                    <button class="btn btn-primary" onclick="app.startReading()">📖 开始阅读</button>
+                    <button class="btn btn-secondary" onclick="app.getChaptersAndDownload()">
                         ${inShelf ? '更新下载' : '开始下载'}
                     </button>
                     ${inShelf ? 
@@ -870,8 +872,20 @@ class App {
             const chapter = this.currentChapters[index];
             
             const cacheKey = `content_${chapter.url}`;
-            let content = this.cacheManager.get(cacheKey);
+            let cachedData = this.cacheManager.get(cacheKey);
+            let content = '';
+            let error = '';
             
+            // 检查缓存
+            if (cachedData) {
+                if (typeof cachedData === 'object' && cachedData.content) {
+                    content = cachedData.content;
+                } else if (typeof cachedData === 'string') {
+                    content = cachedData;
+                }
+            }
+            
+            // 没有缓存则请求
             if (!content) {
                 try {
                     const response = await this.fetchWithRetry('/api/content', {
@@ -883,22 +897,36 @@ class App {
                     const data = await response.json();
                     
                     if (data.success && data.html) {
-                        content = HtmlParser.parseContent(
+                        const parseResult = HtmlParser.parseContent(
                             data.html, 
                             this.currentSource.ruleContent, 
                             data.baseUrl
                         );
                         
-                        this.cacheManager.set(cacheKey, content);
+                        if (parseResult.success && parseResult.content) {
+                            content = parseResult.content;
+                            // 缓存对象格式
+                            this.cacheManager.set(cacheKey, { content, success: true });
+                        } else {
+                            error = parseResult.error || '选择器未匹配';
+                            content = `[解析失败: ${error}]`;
+                            console.warn(`章节 "${chapter.title}" 解析失败:`, parseResult.debug);
+                        }
+                    } else {
+                        error = data.error || 'HTTP错误';
+                        content = `[获取失败: ${error}]`;
                     }
                 } catch (e) {
-                    content = '[下载失败]';
+                    error = e.message;
+                    content = `[下载错误: ${error}]`;
                 }
             }
             
             chapters[index] = {
                 title: chapter.title,
-                content: content || '[内容为空]'
+                content: content,
+                error: error,
+                length: content.length
             };
             
             completed++;
@@ -1388,3 +1416,305 @@ document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
     app.init();
 });
+
+// ==================== 阅读器功能 ====================
+
+/**
+ * 开始阅读
+ */
+App.prototype.startReading = async function(startIndex = 0) {
+    if (!this.currentBook || !this.currentSource) return;
+    
+    const modalContent = document.getElementById('bookModalContent');
+    modalContent.innerHTML = '<div class="loading">加载目录中...</div>';
+    
+    try {
+        const cacheKey = `toc_${this.currentBook.tocUrl || this.currentBook.bookUrl}`;
+        let data = this.cacheManager.get(cacheKey);
+        
+        if (!data) {
+            const response = await this.fetchWithRetry('/api/chapters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    tocUrl: this.currentBook.tocUrl || this.currentBook.bookUrl 
+                })
+            });
+            
+            data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || '获取目录失败');
+            }
+            
+            this.cacheManager.set(cacheKey, data);
+        }
+        
+        this.currentChapters = HtmlParser.parseChapterList(
+            data.html, 
+            this.currentSource.ruleToc, 
+            data.baseUrl
+        );
+        
+        if (this.currentChapters.length === 0) {
+            throw new Error('没有找到章节');
+        }
+        
+        if (!this.readerManager) {
+            this.readerManager = new ReaderManager();
+        }
+        
+        await this.readerManager.init(
+            this.currentBook,
+            this.currentSource,
+            this.currentChapters,
+            startIndex
+        );
+        
+        this.showReader();
+        
+    } catch (e) {
+        console.error('开始阅读失败:', e);
+        modalContent.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+    }
+};
+
+/**
+ * 显示阅读器
+ */
+App.prototype.showReader = function() {
+    const modal = document.getElementById('bookModal');
+    const modalContent = document.getElementById('bookModalContent');
+    
+    modal.classList.add('active');
+    
+    const chapter = this.readerManager.getCurrentChapter();
+    const progress = this.readerManager.getProgress();
+    const theme = this.readerManager.getThemeStyle();
+    const settings = this.readerManager.settings;
+    
+    modalContent.innerHTML = `
+        <div class="reader" style="background: ${theme.background}; color: ${theme.color};">
+            <div class="reader-header" style="border-color: ${theme.border}">
+                <button class="btn btn-small btn-secondary" onclick="app.closeReader()">← 返回</button>
+                <span class="reader-title">${this.escapeHtml(this.currentBook.name)}</span>
+                <button class="btn btn-small btn-secondary" onclick="app.showReaderSettings()">⚙️</button>
+            </div>
+            
+            <div class="reader-content" id="readerContent" style="
+                font-size: ${settings.fontSize}px;
+                line-height: ${settings.lineHeight};
+                font-family: ${this.readerManager.getFontStyle()};
+                padding: ${settings.padding}px;
+            ">
+                <h3 class="chapter-title">${this.escapeHtml(chapter.title)}</h3>
+                <div class="chapter-content">${this.formatContent(this.readerManager.content)}</div>
+            </div>
+            
+            <div class="reader-footer" style="border-color: ${theme.border}">
+                <button class="btn btn-secondary" onclick="app.prevChapter()" ${progress.current <= 1 ? 'disabled' : ''}>
+                    上一章
+                </button>
+                <div class="reader-progress">
+                    <span>${progress.current}/${progress.total}</span>
+                    <div class="progress-bar-mini">
+                        <div class="progress-fill-mini" style="width: ${progress.percent}%"></div>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="app.nextChapter()" ${progress.current >= progress.total ? 'disabled' : ''}>
+                    下一章
+                </button>
+            </div>
+            
+            <div class="reader-nav" id="readerNav">
+                <button onclick="app.prevChapter()">⏮️</button>
+                <button onclick="app.showChapterList()">📋 目录</button>
+                <button onclick="app.showReaderSettings()">⚙️ 设置</button>
+                <button onclick="app.nextChapter()">⏭️</button>
+            </div>
+        </div>
+    `;
+    
+    document.addEventListener('keydown', this.handleReaderKeydown);
+    
+    const readerContent = document.getElementById('readerContent');
+    readerContent.addEventListener('click', (e) => {
+        const rect = readerContent.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const width = rect.width;
+        
+        if (x < width * 0.3) {
+            this.prevChapter();
+        } else if (x > width * 0.7) {
+            this.nextChapter();
+        } else {
+            this.toggleReaderNav();
+        }
+    });
+};
+
+App.prototype.prevChapter = async function() {
+    const success = await this.readerManager.prevChapter();
+    if (success) {
+        this.showReader();
+    } else {
+        this.showToast('已经是第一章了', true);
+    }
+};
+
+App.prototype.nextChapter = async function() {
+    const success = await this.readerManager.nextChapter();
+    if (success) {
+        this.showReader();
+        document.getElementById('readerContent')?.scrollTo(0, 0);
+    } else {
+        this.showToast('已经是最后一章了', true);
+    }
+};
+
+App.prototype.goToChapter = async function(index) {
+    const success = await this.readerManager.goToChapter(index);
+    if (success) {
+        this.showReader();
+    }
+};
+
+App.prototype.showChapterList = function() {
+    const modalContent = document.getElementById('bookModalContent');
+    const currentIndex = this.readerManager.currentChapterIndex;
+    
+    let html = `
+        <div class="chapter-list-modal">
+            <div class="chapter-list-header">
+                <h3>目录 (${this.currentChapters.length}章)</h3>
+                <button class="btn btn-small btn-secondary" onclick="app.showReader()">返回阅读</button>
+            </div>
+            <div class="chapter-list-content">
+    `;
+    
+    for (let i = 0; i < this.currentChapters.length; i++) {
+        const chapter = this.currentChapters[i];
+        const isCurrent = i === currentIndex;
+        
+        html += `
+            <div class="chapter-item ${isCurrent ? 'current' : ''}" onclick="app.goToChapter(${i})">
+                <span class="chapter-num">${i + 1}.</span>
+                <span class="chapter-name">${this.escapeHtml(chapter.title)}</span>
+                ${isCurrent ? '<span class="current-mark">当前</span>' : ''}
+            </div>
+        `;
+    }
+    
+    html += '</div></div>';
+    modalContent.innerHTML = html;
+};
+
+App.prototype.showReaderSettings = function() {
+    const modalContent = document.getElementById('bookModalContent');
+    const settings = this.readerManager.settings;
+    
+    modalContent.innerHTML = `
+        <div class="reader-settings">
+            <h3>阅读设置</h3>
+            
+            <div class="setting-item">
+                <label>字体大小: <span id="fontSizeValue">${settings.fontSize}px</span></label>
+                <input type="range" id="fontSize" min="12" max="32" value="${settings.fontSize}" 
+                       onchange="app.updateReaderSetting('fontSize', this.value)">
+            </div>
+            
+            <div class="setting-item">
+                <label>行高: <span id="lineHeightValue">${settings.lineHeight}</span></label>
+                <input type="range" id="lineHeight" min="1.2" max="3" step="0.1" value="${settings.lineHeight}"
+                       onchange="app.updateReaderSetting('lineHeight', this.value)">
+            </div>
+            
+            <div class="setting-item">
+                <label>边距: <span id="paddingValue">${settings.padding}px</span></label>
+                <input type="range" id="padding" min="5" max="50" value="${settings.padding}"
+                       onchange="app.updateReaderSetting('padding', this.value)">
+            </div>
+            
+            <div class="setting-item">
+                <label>主题</label>
+                <div class="theme-options">
+                    <button class="theme-btn ${settings.theme === 'dark' ? 'active' : ''}" 
+                            onclick="app.updateReaderSetting('theme', 'dark')" 
+                            style="background: #1a1a2e; color: #fff;">深色</button>
+                    <button class="theme-btn ${settings.theme === 'light' ? 'active' : ''}" 
+                            onclick="app.updateReaderSetting('theme', 'light')"
+                            style="background: #fff; color: #333;">浅色</button>
+                    <button class="theme-btn ${settings.theme === 'sepia' ? 'active' : ''}" 
+                            onclick="app.updateReaderSetting('theme', 'sepia')"
+                            style="background: #f4ecd8; color: #5c4b37;">护眼</button>
+                    <button class="theme-btn ${settings.theme === 'green' ? 'active' : ''}" 
+                            onclick="app.updateReaderSetting('theme', 'green')"
+                            style="background: #cce8cf; color: #2d4a2e;">绿色</button>
+                </div>
+            </div>
+            
+            <div class="setting-item">
+                <label>字体</label>
+                <div class="font-options">
+                    <button class="font-btn ${settings.fontFamily === 'serif' ? 'active' : ''}" 
+                            onclick="app.updateReaderSetting('fontFamily', 'serif')">宋体</button>
+                    <button class="font-btn ${settings.fontFamily === 'sans-serif' ? 'active' : ''}" 
+                            onclick="app.updateReaderSetting('fontFamily', 'sans-serif')">黑体</button>
+                </div>
+            </div>
+            
+            <div class="setting-actions">
+                <button class="btn btn-secondary" onclick="app.showReader()">返回阅读</button>
+            </div>
+        </div>
+    `;
+};
+
+App.prototype.updateReaderSetting = function(key, value) {
+    this.readerManager.updateSetting({ [key]: value });
+    
+    const valueSpan = document.getElementById(key + 'Value');
+    if (valueSpan) {
+        valueSpan.textContent = value + (key === 'lineHeight' ? '' : 'px');
+    }
+    
+    this.showReader();
+};
+
+App.prototype.toggleReaderNav = function() {
+    const nav = document.getElementById('readerNav');
+    if (nav) {
+        nav.classList.toggle('show');
+    }
+};
+
+App.prototype.handleReaderKeydown = function(e) {
+    if (!app.readerManager) return;
+    
+    switch (e.key) {
+        case 'ArrowLeft':
+        case 'ArrowUp':
+            app.prevChapter();
+            break;
+        case 'ArrowRight':
+        case 'ArrowDown':
+        case ' ':
+            e.preventDefault();
+            app.nextChapter();
+            break;
+        case 'Escape':
+            app.closeReader();
+            break;
+    }
+};
+
+App.prototype.closeReader = function() {
+    document.removeEventListener('keydown', this.handleReaderKeydown);
+    this.closeModal();
+};
+
+App.prototype.formatContent = function(content) {
+    if (!content) return '';
+    const paragraphs = content.split(/\n+/).filter(p => p.trim());
+    return paragraphs.map(p => `<p>${this.escapeHtml(p.trim())}</p>`).join('');
+};
