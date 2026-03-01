@@ -1,12 +1,13 @@
 /**
- * 主应用模块 - 优化版
- * 支持并发下载
+ * 主应用模块 - 完整优化版
  */
 
 class App {
     constructor() {
         this.sourceManager = new BookSourceManager();
         this.subscribeManager = new SubscribeManager();
+        this.cacheManager = new CacheManager();
+        this.invalidSourceManager = new InvalidSourceManager();
         
         this.currentTab = 'search';
         this.searchResults = [];
@@ -19,8 +20,12 @@ class App {
         
         this.config = {
             searchConcurrent: 10,
-            downloadConcurrent: 10,  // 下载并发数
-            searchTimeout: 30000
+            downloadConcurrent: 10,
+            searchTimeout: 30000,
+            retryCount: 2,           // 重试次数
+            retryDelay: 1000,        // 重试延迟
+            cacheExpire: 3600000,    // 缓存过期时间
+            skipInvalidSource: true  // 跳过失效书源
         };
     }
     
@@ -31,6 +36,7 @@ class App {
         this.bindEvents();
         this.render();
         this.updateStats();
+        this.renderInvalidSources();
     }
     
     bindEvents() {
@@ -71,6 +77,9 @@ class App {
         });
     }
     
+    /**
+     * 搜索 - 带缓存和失效书源跳过
+     */
     async search() {
         const keyword = document.getElementById('searchInput')?.value?.trim();
         
@@ -79,11 +88,26 @@ class App {
             return;
         }
         
-        const sources = this.sourceManager.getEnabledSources();
+        let sources = this.sourceManager.getEnabledSources();
         
         if (sources.length === 0) {
             this.showToast('没有可用的书源，请先导入书源', true);
             this.switchTab('sources');
+            return;
+        }
+        
+        // 跳过失效书源
+        if (this.config.skipInvalidSource) {
+            const beforeCount = sources.length;
+            sources = sources.filter(s => !this.invalidSourceManager.isInvalid(s.bookSourceUrl));
+            const skipped = beforeCount - sources.length;
+            if (skipped > 0) {
+                console.log(`跳过 ${skipped} 个失效书源`);
+            }
+        }
+        
+        if (sources.length === 0) {
+            this.showToast('所有书源都已失效，请清除失效标记或导入新书源', true);
             return;
         }
         
@@ -93,10 +117,10 @@ class App {
         searchBtn.disabled = true;
         
         const resultsDiv = document.getElementById('searchResults');
-        resultsDiv.innerHTML = '<div class="loading">正在搜索...</div>';
+        resultsDiv.innerHTML = `<div class="loading">正在搜索... (使用 ${sources.length} 个书源)</div>`;
         
         try {
-            const response = await fetch('/api/search', {
+            const response = await this.fetchWithRetry('/api/search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -125,14 +149,22 @@ class App {
                             bookSourceName: result.sourceName 
                         }
                     );
-                    allBooks.push(...books);
+                    
+                    if (books.length > 0) {
+                        allBooks.push(...books);
+                        // 标记书源有效
+                        this.invalidSourceManager.remove(result.source);
+                    }
+                } else {
+                    // 标记书源失效
+                    this.invalidSourceManager.add(result.source, result.error);
                 }
             }
             
             this.searchResults = this.mergeResults(allBooks, keyword);
-            
             this.renderSearchResults(this.searchResults);
             this.showToast(`找到 ${this.searchResults.length} 个结果`);
+            this.renderInvalidSources();
             
         } catch (e) {
             console.error('搜索失败:', e);
@@ -142,6 +174,34 @@ class App {
             searchBtn.textContent = originalText;
             searchBtn.disabled = false;
         }
+    }
+    
+    /**
+     * 带重试的请求
+     */
+    async fetchWithRetry(url, options, retries = this.config.retryCount) {
+        let lastError;
+        
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url, options);
+                return response;
+            } catch (e) {
+                lastError = e;
+                if (i < retries - 1) {
+                    await this.sleep(this.config.retryDelay * (i + 1));
+                }
+            }
+        }
+        
+        throw lastError;
+    }
+    
+    /**
+     * 延迟函数
+     */
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
     
     mergeResults(results, keyword) {
@@ -212,6 +272,9 @@ class App {
         resultsDiv.innerHTML = html;
     }
     
+    /**
+     * 显示书籍详情 - 带缓存
+     */
     async showBookDetail(bookUrl, origin) {
         this.currentSource = this.sourceManager.getSource(origin);
         if (!this.currentSource) {
@@ -225,16 +288,25 @@ class App {
         modalContent.innerHTML = '<div class="loading">加载中...</div>';
         
         try {
-            const response = await fetch('/api/book-info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookUrl: bookUrl })
-            });
+            // 检查缓存
+            const cacheKey = `book_${bookUrl}`;
+            let data = this.cacheManager.get(cacheKey);
             
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || '获取失败');
+            if (!data) {
+                const response = await this.fetchWithRetry('/api/book-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bookUrl: bookUrl })
+                });
+                
+                data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || '获取失败');
+                }
+                
+                // 缓存结果
+                this.cacheManager.set(cacheKey, data);
             }
             
             const bookInfo = HtmlParser.parseBookInfo(
@@ -284,6 +356,9 @@ class App {
                     <button class="btn btn-primary" onclick="app.getChaptersAndDownload()">
                         开始下载
                     </button>
+                    <button class="btn btn-secondary" onclick="app.showChangeSource()">
+                        换源
+                    </button>
                     <button class="btn btn-secondary" onclick="app.closeModal()">
                         关闭
                     </button>
@@ -292,6 +367,113 @@ class App {
         `;
     }
     
+    /**
+     * 换源功能
+     */
+    async showChangeSource() {
+        if (!this.currentBook) return;
+        
+        const modalContent = document.getElementById('bookModalContent');
+        modalContent.innerHTML = '<div class="loading">搜索其他书源...</div>';
+        
+        try {
+            // 搜索同名书籍
+            const sources = this.sourceManager.getEnabledSources().filter(
+                s => s.bookSourceUrl !== this.currentSource.bookSourceUrl
+            );
+            
+            if (sources.length === 0) {
+                modalContent.innerHTML = '<div class="error">没有其他可用书源</div>';
+                return;
+            }
+            
+            const response = await fetch('/api/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    keyword: this.currentBook.name,
+                    sources: sources.slice(0, 10),
+                    page: 1
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || '搜索失败');
+            }
+            
+            const allBooks = [];
+            for (const result of data.results) {
+                if (result.success && result.html) {
+                    const books = HtmlParser.parseSearchResult(
+                        result.html, 
+                        result.ruleSearch, 
+                        result.baseUrl,
+                        { bookSourceUrl: result.source, bookSourceName: result.sourceName }
+                    );
+                    allBooks.push(...books);
+                }
+            }
+            
+            // 过滤同名同作者
+            const sameBooks = allBooks.filter(b => 
+                b.name === this.currentBook.name && 
+                (!this.currentBook.author || b.author === this.currentBook.author)
+            );
+            
+            if (sameBooks.length === 0) {
+                modalContent.innerHTML = '<div class="empty">没有找到其他来源</div>';
+                return;
+            }
+            
+            this.renderChangeSourceList(sameBooks);
+            
+        } catch (e) {
+            console.error('换源失败:', e);
+            modalContent.innerHTML = `<div class="error">换源失败: ${e.message}</div>`;
+        }
+    }
+    
+    /**
+     * 渲染换源列表
+     */
+    renderChangeSourceList(books) {
+        const modalContent = document.getElementById('bookModalContent');
+        
+        let html = `
+            <div class="change-source">
+                <h3>选择其他来源 (${books.length})</h3>
+                <div class="source-list">
+        `;
+        
+        for (const book of books) {
+            html += `
+                <div class="source-item" onclick="app.changeSource('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
+                    <span class="source-name">${this.escapeHtml(book.originName)}</span>
+                    <span class="source-latest">${this.escapeHtml(book.lastChapter || '')}</span>
+                </div>
+            `;
+        }
+        
+        html += '</div></div>';
+        modalContent.innerHTML = html;
+    }
+    
+    /**
+     * 切换书源
+     */
+    async changeSource(bookUrl, origin) {
+        this.currentSource = this.sourceManager.getSource(origin);
+        this.currentBook = { ...this.currentBook, bookUrl: bookUrl, origin: origin };
+        
+        this.showToast('已切换书源');
+        this.renderBookDetail(this.currentBook);
+    }
+    
+    /**
+     * 获取目录并下载
+     */
     async getChaptersAndDownload() {
         if (!this.currentBook || !this.currentSource) return;
         
@@ -299,18 +481,26 @@ class App {
         modalContent.innerHTML = '<div class="loading">获取目录中...</div>';
         
         try {
-            const response = await fetch('/api/chapters', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    tocUrl: this.currentBook.tocUrl || this.currentBook.bookUrl 
-                })
-            });
+            // 检查缓存
+            const cacheKey = `toc_${this.currentBook.tocUrl || this.currentBook.bookUrl}`;
+            let data = this.cacheManager.get(cacheKey);
             
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || '获取目录失败');
+            if (!data) {
+                const response = await this.fetchWithRetry('/api/chapters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        tocUrl: this.currentBook.tocUrl || this.currentBook.bookUrl 
+                    })
+                });
+                
+                data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || '获取目录失败');
+                }
+                
+                this.cacheManager.set(cacheKey, data);
             }
             
             this.currentChapters = HtmlParser.parseChapterList(
@@ -332,7 +522,7 @@ class App {
     }
     
     /**
-     * 并发下载
+     * 并发下载 - 带缓存
      */
     async startDownload() {
         if (this.isDownloading) return;
@@ -344,7 +534,6 @@ class App {
         const total = this.currentChapters.length;
         const concurrent = this.config.downloadConcurrent;
         
-        // 初始化内容数组
         const chapters = new Array(total);
         let completed = 0;
         
@@ -367,43 +556,44 @@ class App {
             if (text) text.textContent = `${completed} / ${total}`;
         };
         
-        // 并发下载函数
         const downloadChapter = async (index) => {
             if (this.downloadAborted) return;
             
             const chapter = this.currentChapters[index];
             
-            try {
-                const response = await fetch('/api/content', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chapterUrl: chapter.url })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success && data.html) {
-                    const content = HtmlParser.parseContent(
-                        data.html, 
-                        this.currentSource.ruleContent, 
-                        data.baseUrl
-                    );
-                    chapters[index] = {
-                        title: chapter.title,
-                        content: content || '[内容为空]'
-                    };
-                } else {
-                    chapters[index] = {
-                        title: chapter.title,
-                        content: '[下载失败]'
-                    };
+            // 检查缓存
+            const cacheKey = `content_${chapter.url}`;
+            let content = this.cacheManager.get(cacheKey);
+            
+            if (!content) {
+                try {
+                    const response = await this.fetchWithRetry('/api/content', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chapterUrl: chapter.url })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success && data.html) {
+                        content = HtmlParser.parseContent(
+                            data.html, 
+                            this.currentSource.ruleContent, 
+                            data.baseUrl
+                        );
+                        
+                        // 缓存内容
+                        this.cacheManager.set(cacheKey, content);
+                    }
+                } catch (e) {
+                    content = '[下载失败]';
                 }
-            } catch (e) {
-                chapters[index] = {
-                    title: chapter.title,
-                    content: '[下载失败]'
-                };
             }
+            
+            chapters[index] = {
+                title: chapter.title,
+                content: content || '[内容为空]'
+            };
             
             completed++;
             updateProgress();
@@ -421,7 +611,6 @@ class App {
             await Promise.all(batch);
         }
         
-        // 下载完成
         if (!this.downloadAborted) {
             this.assembleContent(chapters);
         } else {
@@ -431,16 +620,10 @@ class App {
         this.isDownloading = false;
     }
     
-    /**
-     * 停止下载
-     */
     abortDownload() {
         this.downloadAborted = true;
     }
     
-    /**
-     * 组装内容
-     */
     assembleContent(chapters) {
         const content = [];
         
@@ -682,10 +865,11 @@ class App {
         let html = '';
         
         for (const source of sources) {
+            const isInvalid = this.invalidSourceManager.isInvalid(source.bookSourceUrl);
             html += `
-                <div class="source-item ${source.enabled ? '' : 'disabled'}">
+                <div class="source-item ${source.enabled ? '' : 'disabled'} ${isInvalid ? 'invalid' : ''}">
                     <div class="source-info">
-                        <span class="source-name">${this.escapeHtml(source.bookSourceName)}</span>
+                        <span class="source-name">${this.escapeHtml(source.bookSourceName)}${isInvalid ? ' (失效)' : ''}</span>
                         <span class="source-url">${this.escapeHtml(source.bookSourceUrl)}</span>
                     </div>
                     <div class="source-actions">
@@ -717,6 +901,7 @@ class App {
     removeSource(url) {
         if (confirm('确定删除此书源？')) {
             this.sourceManager.removeSource(url);
+            this.invalidSourceManager.remove(url);
             this.renderSourceList();
             this.updateStats();
             this.showToast('已删除书源');
@@ -732,8 +917,47 @@ class App {
         }
     }
     
+    /**
+     * 渲染失效书源列表
+     */
+    renderInvalidSources() {
+        const invalidSources = this.invalidSourceManager.getAll();
+        const listDiv = document.getElementById('invalidSourceList');
+        
+        if (!listDiv) return;
+        
+        if (invalidSources.length === 0) {
+            listDiv.innerHTML = '<div class="empty">暂无失效书源</div>';
+            return;
+        }
+        
+        let html = `<div class="invalid-header">失效书源 (${invalidSources.length}) <button class="btn btn-small btn-secondary" onclick="app.clearInvalidSources()">清除全部</button></div>`;
+        
+        for (const item of invalidSources) {
+            html += `
+                <div class="invalid-item">
+                    <span>${this.escapeHtml(item.url)}</span>
+                    <span class="error">${this.escapeHtml(item.error)}</span>
+                </div>
+            `;
+        }
+        
+        listDiv.innerHTML = html;
+    }
+    
+    /**
+     * 清除失效书源标记
+     */
+    clearInvalidSources() {
+        this.invalidSourceManager.clear();
+        this.renderInvalidSources();
+        this.renderSourceList();
+        this.showToast('已清除失效标记');
+    }
+    
     render() {
         this.renderSourceList();
+        this.renderInvalidSources();
         
         const subscriptions = this.subscribeManager.getAllSubscriptions();
         const subListDiv = document.getElementById('subscribeList');
