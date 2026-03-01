@@ -38,16 +38,21 @@ class JsRuleExecutor {
                 code = `return (${code});`;
             }
             
-            // 包装成异步函数
-            const wrappedCode = `
-                (async function(java, result, baseUrl, book, chapter) {
-                    ${code}
-                })
-            `;
-            
             if (this.debug) {
                 console.log('执行JS代码:', code.substring(0, 200));
             }
+            
+            // 创建沙箱环境
+            const sandbox = this.createSandbox(context);
+            
+            // 包装成异步函数，传递eval函数
+            const wrappedCode = `
+                (async function(java, result, baseUrl, book, chapter, evalFunc) {
+                    // 将eval函数暴露为全局
+                    const eval = evalFunc;
+                    ${code}
+                })
+            `;
             
             // 执行代码
             const fn = eval(wrappedCode);
@@ -56,7 +61,8 @@ class JsRuleExecutor {
                 context.result || '',
                 context.baseUrl || '',
                 context.book || {},
-                context.chapter || {}
+                context.chapter || {},
+                sandbox.eval  // 传递eval函数
             );
             
             return result != null ? String(result) : '';
@@ -135,6 +141,16 @@ class JsRuleExecutor {
                 formatTime: (time, pattern) => {
                     const d = new Date(time);
                     return d.toLocaleString();
+                }
+            },
+            
+            // eval函数 - 用于执行动态代码
+            eval: (code) => {
+                try {
+                    return eval(code);
+                } catch (e) {
+                    console.error('eval执行错误:', e);
+                    return null;
                 }
             }
         };

@@ -136,22 +136,37 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
         
+        // 构建完整的请求头
+        const requestHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Origin': baseUrl,
+            'Referer': baseUrl + '/',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            ...headers
+        };
+        
+        // 如果有body，确保Content-Length正确
+        if (body && method === 'POST') {
+            requestHeaders['Content-Length'] = new TextEncoder().encode(body).length.toString();
+        }
+        
         let response = await fetch(actualUrl, {
             method: method,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive',
-                ...headers
-            },
+            headers: requestHeaders,
             body: method === 'POST' ? body : undefined,
             signal: controller.signal,
             redirect: 'manual'  // 不自动跟随重定向
         });
         
         clearTimeout(timeoutId);
+        
+        // 调试：输出响应状态
+        console.log('搜索响应状态:', response.status, 'URL:', actualUrl);
+        console.log('Location头:', response.headers.get('location'));
         
         // 检查是否是重定向（搜索成功跳转到书籍页面）
         if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
