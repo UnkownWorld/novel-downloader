@@ -174,12 +174,41 @@ class App {
                         continue;
                     }
                     
-                    const books = HtmlParser.parseSearchResult(
-                        result.html, 
-                        result.ruleSearch, 
-                        result.baseUrl,
-                        { bookSourceUrl: result.source, bookSourceName: result.sourceName }
-                    );
+                    let books = [];
+                    
+                    // 检查是否是重定向到书籍页面（搜索精确匹配）
+                    if (result.isRedirect && result.redirectBookUrl) {
+                        console.log(`[${result.sourceName}] 搜索精确匹配，跳转到书籍页面`);
+                        // 从书籍页面提取书籍信息
+                        const bookInfo = HtmlParser.parseBookInfo(
+                            result.html,
+                            result.ruleSearch?.ruleBookInfo,
+                            result.baseUrl
+                        );
+                        
+                        if (bookInfo && bookInfo.name) {
+                            books = [{
+                                name: bookInfo.name,
+                                author: bookInfo.author || '',
+                                bookUrl: result.redirectBookUrl,
+                                coverUrl: bookInfo.coverUrl || '',
+                                intro: bookInfo.intro || '',
+                                lastChapter: bookInfo.lastChapter || '',
+                                origin: result.source,
+                                originName: result.sourceName,
+                                type: 0,
+                                time: Date.now()
+                            }];
+                        }
+                    } else {
+                        // 普通搜索结果解析
+                        books = HtmlParser.parseSearchResult(
+                            result.html, 
+                            result.ruleSearch, 
+                            result.baseUrl,
+                            { bookSourceUrl: result.source, bookSourceName: result.sourceName }
+                        );
+                    }
                     
                     if (books.length > 0) {
                         allBooks.push(...books);

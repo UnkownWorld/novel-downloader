@@ -132,11 +132,11 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
             actualUrl = baseUrl.replace(/\/$/, '') + (actualUrl.startsWith('/') ? actualUrl : '/' + actualUrl);
         }
         
-        // 发起请求
+        // 发起请求 - 不自动跟随重定向，以便检测搜索成功跳转
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
         
-        const response = await fetch(actualUrl, {
+        let response = await fetch(actualUrl, {
             method: method,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -147,12 +147,58 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
                 ...headers
             },
             body: method === 'POST' ? body : undefined,
-            signal: controller.signal
+            signal: controller.signal,
+            redirect: 'manual'  // 不自动跟随重定向
         });
         
         clearTimeout(timeoutId);
         
-        if (!response.ok) {
+        // 检查是否是重定向（搜索成功跳转到书籍页面）
+        if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
+            const redirectUrl = response.headers.get('location');
+            const fullRedirectUrl = redirectUrl.startsWith('http') ? redirectUrl : new URL(redirectUrl, actualUrl).href;
+            
+            console.log('搜索重定向到:', fullRedirectUrl);
+            
+            // 检查是否重定向到书籍页面（通常是 /books/数字/ 格式）
+            if (fullRedirectUrl.match(/\/books\/\d+\/?$/)) {
+                // 搜索成功，直接跳转到唯一匹配的书籍
+                // 获取书籍页面内容
+                const bookResponse = await fetch(fullRedirectUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    }
+                });
+                
+                const bookHtml = await bookResponse.text();
+                
+                // 返回特殊结果，表示直接跳转到书籍页面
+                return {
+                    success: true,
+                    source: source.bookSourceUrl,
+                    sourceName: source.bookSourceName,
+                    ruleSearch: source.ruleSearch,
+                    html: bookHtml,
+                    baseUrl: fullRedirectUrl,
+                    requestUrl: actualUrl,
+                    responseTime: Date.now() - startTime,
+                    htmlLength: bookHtml.length,
+                    isRedirect: true,  // 标记这是重定向结果
+                    redirectBookUrl: fullRedirectUrl
+                };
+            }
+            
+            // 其他重定向，手动跟随
+            response = await fetch(fullRedirectUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                }
+            });
+        }
+        
+        if (!response.ok && response.status !== 0) {
             return { 
                 success: false, 
                 source: source.bookSourceUrl,
