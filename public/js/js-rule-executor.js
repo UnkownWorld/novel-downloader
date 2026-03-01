@@ -21,14 +21,32 @@ class JsRuleExecutor {
             const sandbox = this.createSandbox(context);
             
             // 包装代码
+            let code = jsCode.trim();
+            
+            // 检查是否需要添加return
+            // 如果代码是简单表达式（没有分号、没有变量声明），则添加return
+            const isSimpleExpression = !code.includes(';') && 
+                                       !code.startsWith('var ') && 
+                                       !code.startsWith('let ') && 
+                                       !code.startsWith('const ') &&
+                                       !code.startsWith('if ') &&
+                                       !code.startsWith('for ') &&
+                                       !code.startsWith('while ') &&
+                                       !code.startsWith('function ');
+            
+            if (isSimpleExpression && !code.includes('return ')) {
+                code = `return (${code});`;
+            }
+            
+            // 包装成异步函数
             const wrappedCode = `
                 (async function(java, result, baseUrl, book, chapter) {
-                    ${jsCode}
+                    ${code}
                 })
             `;
             
             if (this.debug) {
-                console.log('执行JS代码:', jsCode.substring(0, 200));
+                console.log('执行JS代码:', code.substring(0, 200));
             }
             
             // 执行代码
@@ -41,7 +59,7 @@ class JsRuleExecutor {
                 context.chapter || {}
             );
             
-            return result;
+            return result != null ? String(result) : '';
             
         } catch (e) {
             console.error('JS执行错误:', e);
