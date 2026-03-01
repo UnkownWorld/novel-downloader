@@ -19,7 +19,6 @@
             <button class="tab-btn active" data-tab="search">🔍 搜索</button>
             <button class="tab-btn" data-tab="sources">📖 书源管理</button>
             <button class="tab-btn" data-tab="subscribe">📡 书源订阅</button>
-            <button class="tab-btn" data-tab="discover">🌐 发现</button>
             <button class="tab-btn" data-tab="settings">⚙️ 设置</button>
         </nav>
         
@@ -87,9 +86,6 @@
                     <button class="btn btn-primary" onclick="app.addSubscription()">
                         ➕ 添加订阅
                     </button>
-                    <button class="btn btn-secondary" onclick="app.updateAllSubscriptions()">
-                        🔄 更新全部
-                    </button>
                 </div>
             </div>
             
@@ -103,18 +99,6 @@
             </div>
         </div>
         
-        <!-- 发现标签 -->
-        <div id="discoverTab" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">发现</span>
-                </div>
-                <div id="discoverContent">
-                    <div class="empty">选择书源查看发现内容</div>
-                </div>
-            </div>
-        </div>
-        
         <!-- 设置标签 -->
         <div id="settingsTab" class="tab-content">
             <div class="card">
@@ -124,20 +108,6 @@
                 <div class="form-group">
                     <label>并发数量</label>
                     <input type="number" id="searchConcurrent" value="10" min="1" max="50">
-                </div>
-                <div class="form-group">
-                    <label>超时时间(秒)</label>
-                    <input type="number" id="searchTimeout" value="30" min="5" max="120">
-                </div>
-            </div>
-            
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">下载设置</span>
-                </div>
-                <div class="form-group">
-                    <label>下载并发</label>
-                    <input type="number" id="downloadConcurrent" value="5" min="1" max="20">
                 </div>
             </div>
             
@@ -171,11 +141,9 @@
     </script>
     
     <!-- 引入JS模块 -->
-    <script src="js/analyze-rule.js"></script>
-    <script src="js/analyze-url.js"></script>
-    <script src="js/webbook.js"></script>
     <script src="js/booksource-manager.js"></script>
     <script src="js/subscribe-manager.js"></script>
+    <script src="js/html-parser.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

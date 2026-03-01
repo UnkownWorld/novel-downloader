@@ -1,5 +1,6 @@
 /**
- * 主应用模块
+ * 主应用模块 - 重写版
+ * 后端获取HTML，前端解析
  */
 
 class App {
@@ -11,15 +12,15 @@ class App {
         this.currentTab = 'search';
         this.searchResults = [];
         this.currentBook = null;
+        this.currentSource = null;
         this.currentChapters = [];
-        this.downloadProgress = null;
+        this.downloadContent = '';
         
         // 配置
         this.config = {
             searchConcurrent: 10,
             searchTimeout: 30000,
-            downloadConcurrent: 5,
-            cacheExpire: 3600000 // 1小时
+            downloadConcurrent: 5
         };
     }
     
@@ -27,17 +28,11 @@ class App {
      * 初始化
      */
     async init() {
-        // 初始化管理器
         await this.sourceManager.init();
         await this.subscribeManager.init();
         
-        // 绑定事件
         this.bindEvents();
-        
-        // 渲染界面
         this.render();
-        
-        // 更新统计
         this.updateStats();
         
         console.log('App initialized');
@@ -81,12 +76,10 @@ class App {
     switchTab(tab) {
         this.currentTab = tab;
         
-        // 更新标签按钮
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
         
-        // 更新内容区域
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.toggle('active', content.id === `${tab}Tab`);
         });
@@ -107,6 +100,7 @@ class App {
         
         if (sources.length === 0) {
             this.showToast('没有可用的书源，请先导入书源', true);
+            this.switchTab('sources');
             return;
         }
         
@@ -116,31 +110,50 @@ class App {
         searchBtn.textContent = '搜索中...';
         searchBtn.disabled = true;
         
-        // 显示进度
         const resultsDiv = document.getElementById('searchResults');
         resultsDiv.innerHTML = '<div class="loading">正在搜索...</div>';
         
         try {
-            // 调用搜索API
+            // 调用搜索API获取HTML
             const response = await fetch('/api/search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     keyword: keyword,
                     sources: sources.slice(0, this.config.searchConcurrent),
-                    concurrent: this.config.searchConcurrent
+                    page: 1
                 })
             });
             
             const data = await response.json();
             
-            if (data.success) {
-                this.searchResults = data.results;
-                this.renderSearchResults(data.results);
-                this.showToast(`找到 ${data.results.length} 个结果`);
-            } else {
+            if (!data.success) {
                 throw new Error(data.error || '搜索失败');
             }
+            
+            // 在前端解析HTML
+            const allBooks = [];
+            
+            for (const result of data.results) {
+                if (result.success && result.html) {
+                    const books = HtmlParser.parseSearchResult(
+                        result.html, 
+                        result.ruleSearch, 
+                        result.baseUrl,
+                        { 
+                            bookSourceUrl: result.source, 
+                            bookSourceName: result.sourceName 
+                        }
+                    );
+                    allBooks.push(...books);
+                }
+            }
+            
+            // 合并去重
+            this.searchResults = this.mergeResults(allBooks, keyword);
+            
+            this.renderSearchResults(this.searchResults);
+            this.showToast(`找到 ${this.searchResults.length} 个结果`);
             
         } catch (e) {
             console.error('搜索失败:', e);
@@ -153,71 +166,62 @@ class App {
     }
     
     /**
-     * SSE搜索
+     * 合并搜索结果
      */
-    async searchSSE(keyword) {
-        const sources = this.sourceManager.getEnabledSources();
+    mergeResults(results, keyword) {
+        const merged = new Map();
         
-        if (sources.length === 0) {
-            this.showToast('没有可用的书源', true);
-            return;
+        for (const book of results) {
+            const key = `${book.name}_${book.author}`;
+            
+            if (merged.has(key)) {
+                const existing = merged.get(key);
+                if (!existing.origins) {
+                    existing.origins = [existing.origin];
+                    existing.originNames = [existing.originName];
+                }
+                if (!existing.origins.includes(book.origin)) {
+                    existing.origins.push(book.origin);
+                    existing.originNames.push(book.originName);
+                }
+            } else {
+                merged.set(key, book);
+            }
         }
         
-        const resultsDiv = document.getElementById('searchResults');
-        resultsDiv.innerHTML = '<div class="loading">正在搜索...</div>';
-        
-        const allResults = [];
-        
-        try {
-            const url = `/api/search?sse=true&keyword=${encodeURIComponent(keyword)}&sources=${encodeURIComponent(JSON.stringify(sources))}&concurrent=${this.config.searchConcurrent}`;
+        // 排序
+        return Array.from(merged.values()).sort((a, b) => {
+            const aExact = a.name === keyword || a.author === keyword;
+            const bExact = b.name === keyword || b.author === keyword;
+            if (aExact && !bExact) return -1;
+            if (!aExact && bExact) return 1;
             
-            const eventSource = new EventSource(url);
+            const aContains = a.name.includes(keyword);
+            const bContains = b.name.includes(keyword);
+            if (aContains && !bContains) return -1;
+            if (!aContains && bContains) return 1;
             
-            eventSource.addEventListener('message', (e) => {
-                const data = JSON.parse(e.data);
-                if (data.data) {
-                    allResults.push(...data.data);
-                    this.renderSearchResults(allResults, true);
-                }
-            });
-            
-            eventSource.addEventListener('end', (e) => {
-                eventSource.close();
-                this.renderSearchResults(allResults);
-                this.showToast(`搜索完成，共 ${allResults.length} 个结果`);
-            });
-            
-            eventSource.addEventListener('error', (e) => {
-                eventSource.close();
-                if (allResults.length === 0) {
-                    resultsDiv.innerHTML = '<div class="error">搜索失败</div>';
-                }
-            });
-            
-        } catch (e) {
-            console.error('SSE搜索失败:', e);
-            this.showToast('搜索失败: ' + e.message, true);
-        }
+            return (b.origins?.length || 1) - (a.origins?.length || 1);
+        });
     }
     
     /**
      * 渲染搜索结果
      */
-    renderSearchResults(results, isSearching = false) {
+    renderSearchResults(results) {
         const resultsDiv = document.getElementById('searchResults');
         
         if (results.length === 0) {
-            resultsDiv.innerHTML = isSearching ? 
-                '<div class="loading">正在搜索...</div>' : 
-                '<div class="empty">没有找到结果</div>';
+            resultsDiv.innerHTML = '<div class="empty">没有找到结果</div>';
             return;
         }
         
         let html = '';
         
         for (const book of results) {
+            const sources = book.originNames || [book.originName];
             html += `
-                <div class="book-item" onclick="app.showBookDetail('${encodeURIComponent(book.bookUrl)}', '${encodeURIComponent(book.origin)}')">
+                <div class="book-item" onclick="app.showBookDetail('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
                     <div class="book-cover">
                         ${book.coverUrl ? `<img src="${book.coverUrl}" onerror="this.style.display='none'">` : ''}
                     </div>
@@ -225,17 +229,13 @@ class App {
                         <h3>${this.escapeHtml(book.name)}</h3>
                         <div class="meta">
                             <span class="author">${this.escapeHtml(book.author || '未知作者')}</span>
-                            <span class="source">${this.escapeHtml(book.originName || '')}</span>
+                            <span class="source-count">${sources.length}个来源</span>
                         </div>
                         ${book.lastChapter ? `<div class="latest">最新: ${this.escapeHtml(book.lastChapter)}</div>` : ''}
                         ${book.intro ? `<div class="intro">${this.escapeHtml(book.intro)}</div>` : ''}
                     </div>
                 </div>
             `;
-        }
-        
-        if (isSearching) {
-            html += '<div class="loading">继续搜索中...</div>';
         }
         
         resultsDiv.innerHTML = html;
@@ -245,42 +245,46 @@ class App {
      * 显示书籍详情
      */
     async showBookDetail(bookUrl, origin) {
-        bookUrl = decodeURIComponent(bookUrl);
-        origin = decodeURIComponent(origin);
-        
-        const source = this.sourceManager.getSource(origin);
-        if (!source) {
+        this.currentSource = this.sourceManager.getSource(origin);
+        if (!this.currentSource) {
             this.showToast('书源不存在', true);
             return;
         }
         
-        // 显示加载中
         const modal = document.getElementById('bookModal');
         const modalContent = document.getElementById('bookModalContent');
         modal.classList.add('active');
         modalContent.innerHTML = '<div class="loading">加载中...</div>';
         
         try {
-            // 获取书籍信息
-            const book = this.searchResults.find(b => b.bookUrl === bookUrl) || { bookUrl, origin };
-            
+            // 获取书籍页面HTML
             const response = await fetch('/api/book-info', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    bookUrl: bookUrl,
-                    source: source
-                })
+                body: JSON.stringify({ bookUrl: bookUrl })
             });
             
             const data = await response.json();
             
-            if (data.success) {
-                this.currentBook = data.book;
-                this.renderBookDetail(data.book, source);
-            } else {
-                throw new Error(data.error || '获取书籍信息失败');
+            if (!data.success) {
+                throw new Error(data.error || '获取失败');
             }
+            
+            // 在前端解析
+            const bookInfo = HtmlParser.parseBookInfo(
+                data.html, 
+                this.currentSource.ruleBookInfo, 
+                data.baseUrl
+            );
+            
+            this.currentBook = {
+                ...this.searchResults.find(b => b.bookUrl === bookUrl) || {},
+                ...bookInfo,
+                bookUrl: bookUrl,
+                origin: origin
+            };
+            
+            this.renderBookDetail(this.currentBook);
             
         } catch (e) {
             console.error('获取书籍信息失败:', e);
@@ -291,7 +295,7 @@ class App {
     /**
      * 渲染书籍详情
      */
-    renderBookDetail(book, source) {
+    renderBookDetail(book) {
         const modalContent = document.getElementById('bookModalContent');
         
         modalContent.innerHTML = `
@@ -302,9 +306,9 @@ class App {
                         <h2>${this.escapeHtml(book.name)}</h2>
                         <div class="meta">
                             <span>${this.escapeHtml(book.author || '未知作者')}</span>
-                            <span>${this.escapeHtml(book.kind || '')}</span>
+                            ${book.kind ? `<span>${this.escapeHtml(book.kind)}</span>` : ''}
                         </div>
-                        <div class="source">来源: ${this.escapeHtml(source.bookSourceName)}</div>
+                        <div class="source">来源: ${this.escapeHtml(this.currentSource.bookSourceName)}</div>
                     </div>
                 </div>
                 
@@ -314,11 +318,8 @@ class App {
                 </div>
                 
                 <div class="book-actions">
-                    <button class="btn btn-primary" onclick="app.startDownload()">
+                    <button class="btn btn-primary" onclick="app.getChaptersAndDownload()">
                         开始下载
-                    </button>
-                    <button class="btn btn-secondary" onclick="app.showChapters()">
-                        查看目录
                     </button>
                     <button class="btn btn-secondary" onclick="app.closeModal()">
                         关闭
@@ -329,35 +330,43 @@ class App {
     }
     
     /**
-     * 显示目录
+     * 获取目录并下载
      */
-    async showChapters() {
-        if (!this.currentBook) return;
-        
-        const source = this.sourceManager.getSource(this.currentBook.origin);
-        if (!source) return;
+    async getChaptersAndDownload() {
+        if (!this.currentBook || !this.currentSource) return;
         
         const modalContent = document.getElementById('bookModalContent');
-        modalContent.innerHTML = '<div class="loading">加载目录中...</div>';
+        modalContent.innerHTML = '<div class="loading">获取目录中...</div>';
         
         try {
+            // 获取目录页面HTML
             const response = await fetch('/api/chapters', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    book: this.currentBook,
-                    source: source
+                body: JSON.stringify({ 
+                    tocUrl: this.currentBook.tocUrl || this.currentBook.bookUrl 
                 })
             });
             
             const data = await response.json();
             
-            if (data.success) {
-                this.currentChapters = data.chapters;
-                this.renderChapters(data.chapters);
-            } else {
+            if (!data.success) {
                 throw new Error(data.error || '获取目录失败');
             }
+            
+            // 在前端解析
+            this.currentChapters = HtmlParser.parseChapterList(
+                data.html, 
+                this.currentSource.ruleToc, 
+                data.baseUrl
+            );
+            
+            if (this.currentChapters.length === 0) {
+                throw new Error('解析目录失败，没有找到章节');
+            }
+            
+            // 开始下载
+            this.startDownload();
             
         } catch (e) {
             console.error('获取目录失败:', e);
@@ -366,122 +375,97 @@ class App {
     }
     
     /**
-     * 渲染目录
-     */
-    renderChapters(chapters) {
-        const modalContent = document.getElementById('bookModalContent');
-        
-        let html = `
-            <div class="chapters">
-                <div class="chapters-header">
-                    <h3>目录 (${chapters.length}章)</h3>
-                    <button class="btn btn-small" onclick="app.startDownload()">下载全部</button>
-                </div>
-                <div class="chapters-list">
-        `;
-        
-        for (let i = 0; i < chapters.length; i++) {
-            const chapter = chapters[i];
-            html += `
-                <div class="chapter-item" onclick="app.downloadChapter(${i})">
-                    <span class="chapter-index">${i + 1}</span>
-                    <span class="chapter-title">${this.escapeHtml(chapter.title)}</span>
-                </div>
-            `;
-        }
-        
-        html += '</div></div>';
-        modalContent.innerHTML = html;
-    }
-    
-    /**
      * 开始下载
      */
     async startDownload() {
-        if (!this.currentBook || this.currentChapters.length === 0) {
-            this.showToast('请先获取目录', true);
-            return;
-        }
-        
-        const source = this.sourceManager.getSource(this.currentBook.origin);
-        if (!source) return;
-        
-        // 显示下载进度
         const modalContent = document.getElementById('bookModalContent');
+        const total = this.currentChapters.length;
+        
         modalContent.innerHTML = `
             <div class="download-progress">
                 <h3>下载中...</h3>
                 <div class="progress-bar">
                     <div class="progress-fill" id="downloadProgressFill" style="width: 0%"></div>
                 </div>
-                <div class="progress-text" id="downloadProgressText">0 / ${this.currentChapters.length}</div>
-                <div class="download-content" id="downloadContent"></div>
+                <div class="progress-text" id="downloadProgressText">0 / ${total}</div>
             </div>
         `;
         
         const content = [];
-        const total = this.currentChapters.length;
+        content.push(`${this.currentBook.name}`);
+        content.push(`作者: ${this.currentBook.author || '未知'}`);
+        content.push(`来源: ${this.currentSource.bookSourceName}`);
+        content.push('');
+        content.push('='.repeat(50));
+        content.push('');
         
         for (let i = 0; i < total; i++) {
             const chapter = this.currentChapters[i];
             
             try {
+                // 获取章节内容
                 const response = await fetch('/api/content', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        book: this.currentBook,
-                        chapter: chapter,
-                        source: source
-                    })
+                    body: JSON.stringify({ chapterUrl: chapter.url })
                 });
                 
                 const data = await response.json();
                 
-                if (data.success) {
-                    content.push(`\n\n第${i + 1}章 ${chapter.title}\n\n${data.content}`);
+                if (data.success && data.html) {
+                    const chapterContent = HtmlParser.parseContent(
+                        data.html, 
+                        this.currentSource.ruleContent, 
+                        data.baseUrl
+                    );
+                    
+                    content.push(`\n\n第${i + 1}章 ${chapter.title}\n\n${chapterContent}`);
                 }
                 
             } catch (e) {
                 console.error('下载章节失败:', e);
+                content.push(`\n\n第${i + 1}章 ${chapter.title}\n\n[下载失败]`);
             }
             
             // 更新进度
             const progress = ((i + 1) / total * 100).toFixed(1);
-            document.getElementById('downloadProgressFill').style.width = progress + '%';
-            document.getElementById('downloadProgressText').textContent = `${i + 1} / ${total}`;
+            const progressFill = document.getElementById('downloadProgressFill');
+            const progressText = document.getElementById('downloadProgressText');
+            
+            if (progressFill) progressFill.style.width = progress + '%';
+            if (progressText) progressText.textContent = `${i + 1} / ${total}`;
         }
         
         // 下载完成
-        this.downloadComplete(content.join(''));
+        this.downloadContent = content.join('');
+        this.downloadComplete();
     }
     
     /**
      * 下载完成
      */
-    downloadComplete(content) {
+    downloadComplete() {
         const modalContent = document.getElementById('bookModalContent');
         
         modalContent.innerHTML = `
             <div class="download-complete">
-                <h3>下载完成</h3>
-                <p>共 ${content.length} 字</p>
+                <h3>✓ 下载完成</h3>
+                <p>共 ${this.downloadContent.length} 字</p>
                 <div class="actions">
-                    <button class="btn btn-primary" onclick="app.saveToFile('${this.escapeHtml(this.currentBook.name)}.txt')">保存文件</button>
+                    <button class="btn btn-primary" onclick="app.saveToFile()">保存文件</button>
                     <button class="btn btn-secondary" onclick="app.copyToClipboard()">复制内容</button>
                 </div>
             </div>
         `;
-        
-        this.downloadContent = content;
     }
     
     /**
      * 保存到文件
      */
-    saveToFile(filename) {
+    saveToFile() {
         if (!this.downloadContent) return;
         
+        const filename = `${this.currentBook.name}.txt`;
         const blob = new Blob([this.downloadContent], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -533,7 +517,6 @@ class App {
             this.showToast('导入失败: ' + e.message, true);
         }
         
-        // 清空input
         event.target.value = '';
     }
     
@@ -561,6 +544,22 @@ class App {
     }
     
     /**
+     * 导出书源
+     */
+    exportSources() {
+        const json = this.sourceManager.exportSources();
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bookSources.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        this.showToast('导出成功');
+    }
+    
+    /**
      * 测试书源
      */
     async testSources() {
@@ -575,31 +574,71 @@ class App {
         statusDiv.classList.remove('hidden');
         statusDiv.innerHTML = '<div class="loading">测试中...</div>';
         
-        try {
-            const response = await fetch('/api/test-sources', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sources: sources.slice(0, 20),
-                    keyword: '我的',
-                    checkSearch: true,
-                    checkInfo: true,
-                    checkToc: true,
-                    checkContent: false
-                })
-            });
+        const results = [];
+        const keyword = '我的';
+        
+        for (const source of sources.slice(0, 20)) {
+            const startTime = Date.now();
             
-            const data = await response.json();
-            
-            if (data.success) {
-                this.renderTestResults(data.results);
-            } else {
-                throw new Error(data.error || '测试失败');
+            try {
+                if (!source.searchUrl) {
+                    results.push({
+                        bookSourceName: source.bookSourceName,
+                        success: false,
+                        error: '未配置搜索URL',
+                        responseTime: 0
+                    });
+                    continue;
+                }
+                
+                // 获取搜索页面
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        keyword: keyword,
+                        sources: [source],
+                        page: 1
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.results[0]?.html) {
+                    // 解析结果
+                    const books = HtmlParser.parseSearchResult(
+                        data.results[0].html,
+                        source.ruleSearch,
+                        data.results[0].baseUrl,
+                        source
+                    );
+                    
+                    results.push({
+                        bookSourceName: source.bookSourceName,
+                        success: books.length > 0,
+                        error: books.length > 0 ? '' : '无搜索结果',
+                        responseTime: Date.now() - startTime
+                    });
+                } else {
+                    results.push({
+                        bookSourceName: source.bookSourceName,
+                        success: false,
+                        error: data.results[0]?.error || '请求失败',
+                        responseTime: Date.now() - startTime
+                    });
+                }
+                
+            } catch (e) {
+                results.push({
+                    bookSourceName: source.bookSourceName,
+                    success: false,
+                    error: e.message,
+                    responseTime: Date.now() - startTime
+                });
             }
-            
-        } catch (e) {
-            statusDiv.innerHTML = `<div class="error">测试失败: ${e.message}</div>`;
         }
+        
+        this.renderTestResults(results);
     }
     
     /**
@@ -662,11 +701,11 @@ class App {
                     </div>
                     <div class="source-actions">
                         <button class="btn btn-small ${source.enabled ? 'btn-secondary' : 'btn-success'}" 
-                                onclick="app.toggleSource('${source.bookSourceUrl}')">
+                                onclick="app.toggleSource('${this.escapeAttr(source.bookSourceUrl)}')">
                             ${source.enabled ? '禁用' : '启用'}
                         </button>
                         <button class="btn btn-small btn-danger" 
-                                onclick="app.removeSource('${source.bookSourceUrl}')">
+                                onclick="app.removeSource('${this.escapeAttr(source.bookSourceUrl)}')">
                             删除
                         </button>
                     </div>
@@ -719,7 +758,6 @@ class App {
     render() {
         this.renderSourceList();
         
-        // 渲染订阅列表
         const subscriptions = this.subscribeManager.getAllSubscriptions();
         const subListDiv = document.getElementById('subscribeList');
         
@@ -758,9 +796,7 @@ class App {
             const result = await this.subscribeManager.addSubscription(url);
             
             if (result.success) {
-                // 导入书源
                 await this.sourceManager.addSources(result.sources);
-                
                 this.showToast(`订阅成功，导入 ${result.sources.length} 个书源`);
                 this.render();
                 this.updateStats();
@@ -804,6 +840,16 @@ class App {
     }
     
     /**
+     * 清除所有数据
+     */
+    clearAllData() {
+        if (confirm('确定清除所有数据？此操作不可恢复！')) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+    
+    /**
      * 显示Toast
      */
     showToast(message, isError = false) {
@@ -830,6 +876,16 @@ class App {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+    
+    /**
+     * 属性转义
+     */
+    escapeAttr(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'");
     }
 }
 
