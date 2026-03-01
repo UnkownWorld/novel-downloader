@@ -17,9 +17,6 @@ class JsRuleExecutor {
      */
     async execute(jsCode, context = {}) {
         try {
-            // 创建执行环境
-            const sandbox = this.createSandbox(context);
-            
             // 包装代码
             let code = jsCode.trim();
             
