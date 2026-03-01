@@ -568,17 +568,27 @@ class App {
     // ==================== 发现页面 ====================
     
     renderExploreSources() {
-        const sources = this.sourceManager.getEnabledSources().filter(s => s.exploreUrl);
+        const allSources = this.sourceManager.getEnabledSources();
+        const sources = allSources.filter(s => s.exploreUrl);
         const selectDiv = document.getElementById('exploreSourceSelect');
         
         if (!selectDiv) return;
         
         if (sources.length === 0) {
-            selectDiv.innerHTML = '<div class="empty">没有支持发现的书源</div>';
+            selectDiv.innerHTML = `
+                <div class="empty">
+                    <p>没有支持发现的书源</p>
+                    <p class="hint">总书源: ${allSources.length} 个</p>
+                    <p class="hint">支持发现的书源需要有 exploreUrl 属性</p>
+                </div>
+            `;
             return;
         }
         
-        let html = '<select id="exploreSource" onchange="app.loadExplore()"><option value="">选择书源</option>';
+        let html = `
+            <select id="exploreSource" onchange="app.loadExplore()">
+                <option value="">选择书源 (${sources.length}个)</option>
+        `;
         
         for (const source of sources) {
             html += `<option value="${this.escapeAttr(source.bookSourceUrl)}">${this.escapeHtml(source.bookSourceName)}</option>`;
@@ -588,10 +598,6 @@ class App {
         selectDiv.innerHTML = html;
     }
     
-    async loadExplore() {
-        const sourceUrl = document.getElementById('exploreSource')?.value;
-        if (!sourceUrl) return;
-        
         this.currentExploreSource = this.sourceManager.getSource(sourceUrl);
         if (!this.currentExploreSource || !this.currentExploreSource.exploreUrl) {
             this.showToast('书源不支持发现', true);
@@ -1594,12 +1600,20 @@ document.addEventListener('DOMContentLoaded', () => {
  * 开始阅读
  */
 App.prototype.startReading = async function(startIndex = 0) {
-    if (!this.currentBook || !this.currentSource) return;
+    if (!this.currentBook || !this.currentSource) {
+        this.showToast('请先选择书籍', true);
+        return;
+    }
     
     const modalContent = document.getElementById('bookModalContent');
     modalContent.innerHTML = '<div class="loading">加载目录中...</div>';
     
     try {
+        // 检查书源规则
+        if (!this.currentSource.ruleToc) {
+            throw new Error('书源缺少目录规则(ruleToc)');
+        }
+        
         const cacheKey = `toc_${this.currentBook.tocUrl || this.currentBook.bookUrl}`;
         let data = this.cacheManager.get(cacheKey);
         
@@ -1628,7 +1642,32 @@ App.prototype.startReading = async function(startIndex = 0) {
         );
         
         if (this.currentChapters.length === 0) {
-            throw new Error('没有找到章节');
+            // 显示调试信息
+            modalContent.innerHTML = `
+                <div class="debug-chapter">
+                    <h3>❌ 目录解析失败</h3>
+                    <div class="debug-section">
+                        <h4>可能原因</h4>
+                        <ul>
+                            <li>目录规则不正确</li>
+                            <li>网站结构已变化</li>
+                            <li>需要登录才能查看</li>
+                        </ul>
+                    </div>
+                    <div class="debug-section">
+                        <h4>调试信息</h4>
+                        <p>目录URL: <code>${this.escapeHtml(this.currentBook.tocUrl || this.currentBook.bookUrl)}</code></p>
+                        <p>HTML长度: ${data.html?.length || 0} 字符</p>
+                        <p>目录规则: <code>${this.escapeHtml(JSON.stringify(this.currentSource.ruleToc))}</code></p>
+                    </div>
+                    <div class="debug-section">
+                        <h4>HTML预览 (前500字)</h4>
+                        <div class="debug-html">${this.escapeHtml(data.html?.substring(0, 500) || '(空)')}</div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="app.renderBookDetail(app.currentBook)">返回</button>
+                </div>
+            `;
+            return;
         }
         
         if (!this.readerManager) {
@@ -1646,13 +1685,15 @@ App.prototype.startReading = async function(startIndex = 0) {
         
     } catch (e) {
         console.error('开始阅读失败:', e);
-        modalContent.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+        modalContent.innerHTML = `
+            <div class="error">
+                <h3>加载失败</h3>
+                <p>${this.escapeHtml(e.message)}</p>
+                <button class="btn btn-secondary" onclick="app.renderBookDetail(app.currentBook)">返回</button>
+            </div>
+        `;
     }
 };
-
-/**
- * 显示阅读器
- */
 App.prototype.showReader = function() {
     const modal = document.getElementById('bookModal');
     const modalContent = document.getElementById('bookModalContent');

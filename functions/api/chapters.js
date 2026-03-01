@@ -1,5 +1,5 @@
 /**
- * 目录API - 获取HTML，前端解析
+ * 目录API - 支持分页
  */
 
 export async function onRequest(context) {
@@ -7,7 +7,7 @@ export async function onRequest(context) {
     
     try {
         const body = await request.json();
-        const { tocUrl } = body;
+        const { tocUrl, page } = body;
         
         if (!tocUrl) {
             return new Response(JSON.stringify({ 
@@ -19,7 +19,20 @@ export async function onRequest(context) {
             });
         }
         
-        const response = await fetch(tocUrl, {
+        // 处理分页URL
+        let targetUrl = tocUrl;
+        if (page && page > 1) {
+            // 常见分页格式
+            targetUrl = tocUrl.replace(/\.html$/, `_${page}.html`);
+            if (targetUrl === tocUrl) {
+                targetUrl = tocUrl.replace(/\/$/, `/${page}/`);
+            }
+            if (targetUrl === tocUrl) {
+                targetUrl = tocUrl + '?page=' + page;
+            }
+        }
+        
+        const response = await fetch(targetUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -41,7 +54,8 @@ export async function onRequest(context) {
         return new Response(JSON.stringify({
             success: true,
             html: html,
-            baseUrl: response.url
+            baseUrl: response.url,
+            requestedUrl: targetUrl
         }), {
             headers: { 
                 'Content-Type': 'application/json',
