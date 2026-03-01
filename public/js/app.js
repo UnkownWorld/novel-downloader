@@ -1474,32 +1474,38 @@ class App {
         this.showToast('正在获取订阅...');
         
         try {
-            console.log('添加订阅:', url);
+            console.log('========== 开始添加订阅 ==========');
+            console.log('订阅URL:', url);
             
             const result = await this.subscribeManager.addSubscription(url);
             
             console.log('订阅结果:', result);
             
             if (result.success) {
+                console.log('获取到的书源数量:', result.sources ? result.sources.length : 0);
+                
                 if (result.sources && result.sources.length > 0) {
-                    console.log(`获取到 ${result.sources.length} 个书源，正在添加...`);
+                    console.log('书源列表预览:', result.sources.slice(0, 3));
                     
-                    const addResult = await this.sourceManager.addSources(result.sources);
-                    
+                    // 添加书源到管理器
+                    const addResult = this.sourceManager.addSources(result.sources);
                     console.log('添加结果:', addResult);
                     
-                    // 强制保存
+                    // 再次确保保存
                     this.sourceManager.saveSources();
+                    
+                    // 验证保存结果
+                    const savedSources = this.sourceManager.getAllSources();
+                    console.log('当前保存的书源总数:', savedSources.length);
                     
                     this.showToast(`订阅成功！导入 ${result.sources.length} 个书源（新增 ${addResult.added}，更新 ${addResult.updated}）`);
                     
-                    // 立即刷新所有相关界面
+                    // 刷新界面
                     this.renderSourceList();
                     this.renderExploreSources();
                     this.updateStats();
-                    this.render();
                 } else {
-                    this.showToast('订阅成功，但没有获取到书源', true);
+                    this.showToast('订阅成功，但没有获取到有效书源', true);
                     console.warn('没有获取到书源:', result);
                 }
             } else {
