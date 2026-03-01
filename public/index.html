@@ -288,7 +288,14 @@
                 </div>
                 
                 <h3 style="margin-bottom:8px;font-size:0.95rem">导入书源</h3>
-                <textarea id="sourceInput" placeholder='粘贴Legado格式书源JSON...'></textarea>
+                
+                <!-- URL导入 -->
+                <div class="form-row" style="margin-bottom:8px">
+                    <input type="text" id="sourceUrlInput" placeholder="输入书源URL..." style="flex:1">
+                    <button class="btn" onclick="importFromUrl()">🔗 从URL导入</button>
+                </div>
+                
+                <textarea id="sourceInput" placeholder='或粘贴Legado格式书源JSON...'></textarea>
                 
                 <div class="btn-group" style="margin-top:8px">
                     <button class="btn" onclick="importSources()">📥 导入JSON</button>
@@ -1061,6 +1068,81 @@
                 importSources();
             };
             reader.readAsText(file);
+        }
+        
+        // 从URL导入书源
+        async function importFromUrl() {
+            const urlInput = document.getElementById('sourceUrlInput');
+            const url = urlInput.value.trim();
+            if (!url) {
+                showToast('请输入书源URL', true);
+                return;
+            }
+            
+            // 验证URL格式
+            try {
+                new URL(url);
+            } catch (e) {
+                showToast('URL格式不正确', true);
+                return;
+            }
+            
+            showToast('正在从URL获取书源...');
+            
+            try {
+                const result = await fetchHtml(url);
+                
+                if (!result.success) {
+                    showToast('获取书源失败: ' + (result.error || '网络错误'), true);
+                    return;
+                }
+                
+                // 解析书源数据
+                const data = JSON.parse(result.content);
+                const sources = extractBookSources(data);
+                
+                if (sources.length === 0) {
+                    showToast('未找到有效的书源数据', true);
+                    return;
+                }
+                
+                // 导入书源
+                let added = 0, updated = 0, skipped = 0;
+                
+                sources.forEach(s => {
+                    if (!s.bookSourceName || !s.bookSourceUrl) {
+                        skipped++;
+                        return;
+                    }
+                    const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
+                    if (existingIndex >= 0) {
+                        bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: s.enabled !== false };
+                        updated++;
+                    } else {
+                        bookSources.push({ ...s, enabled: s.enabled !== false });
+                        added++;
+                    }
+                });
+                
+                Storage.set('bookSources', bookSources);
+                Storage.set('lastUpdate', Date.now());
+                lastUpdateTime = Date.now();
+                
+                updateSourceCount();
+                updateSourceSelect();
+                renderSourceList();
+                
+                urlInput.value = '';
+                
+                let message = `成功导入 ${added} 个，更新 ${updated} 个书源`;
+                if (skipped > 0) {
+                    message += `，跳过 ${skipped} 个无效项`;
+                }
+                showToast(message);
+                
+            } catch (e) {
+                showToast('解析书源失败: ' + e.message, true);
+            }
         }
         
         function toggleSource(index) {
