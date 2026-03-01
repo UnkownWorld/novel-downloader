@@ -1,5 +1,6 @@
 /**
- * 主应用模块 - 完整优化版
+ * 主应用模块 - 完整版
+ * 包含发现页面和书架功能
  */
 
 class App {
@@ -8,6 +9,7 @@ class App {
         this.subscribeManager = new SubscribeManager();
         this.cacheManager = new CacheManager();
         this.invalidSourceManager = new InvalidSourceManager();
+        this.bookshelfManager = new BookshelfManager();
         
         this.currentTab = 'search';
         this.searchResults = [];
@@ -18,25 +20,33 @@ class App {
         this.isDownloading = false;
         this.downloadAborted = false;
         
+        // 发现页面状态
+        this.currentExploreSource = null;
+        this.exploreResults = [];
+        this.explorePage = 1;
+        
         this.config = {
             searchConcurrent: 10,
             downloadConcurrent: 10,
             searchTimeout: 30000,
-            retryCount: 2,           // 重试次数
-            retryDelay: 1000,        // 重试延迟
-            cacheExpire: 3600000,    // 缓存过期时间
-            skipInvalidSource: true  // 跳过失效书源
+            retryCount: 2,
+            retryDelay: 1000,
+            cacheExpire: 3600000,
+            skipInvalidSource: true
         };
     }
     
     async init() {
         await this.sourceManager.init();
         await this.subscribeManager.init();
+        await this.bookshelfManager.init();
         
         this.bindEvents();
         this.render();
         this.updateStats();
         this.renderInvalidSources();
+        this.renderBookshelf();
+        this.renderExploreSources();
     }
     
     bindEvents() {
@@ -77,9 +87,8 @@ class App {
         });
     }
     
-    /**
-     * 搜索 - 带缓存和失效书源跳过
-     */
+    // ==================== 搜索功能 ====================
+    
     async search() {
         const keyword = document.getElementById('searchInput')?.value?.trim();
         
@@ -96,7 +105,6 @@ class App {
             return;
         }
         
-        // 跳过失效书源
         if (this.config.skipInvalidSource) {
             const beforeCount = sources.length;
             sources = sources.filter(s => !this.invalidSourceManager.isInvalid(s.bookSourceUrl));
@@ -144,19 +152,14 @@ class App {
                         result.html, 
                         result.ruleSearch, 
                         result.baseUrl,
-                        { 
-                            bookSourceUrl: result.source, 
-                            bookSourceName: result.sourceName 
-                        }
+                        { bookSourceUrl: result.source, bookSourceName: result.sourceName }
                     );
                     
                     if (books.length > 0) {
                         allBooks.push(...books);
-                        // 标记书源有效
                         this.invalidSourceManager.remove(result.source);
                     }
                 } else {
-                    // 标记书源失效
                     this.invalidSourceManager.add(result.source, result.error);
                 }
             }
@@ -176,9 +179,6 @@ class App {
         }
     }
     
-    /**
-     * 带重试的请求
-     */
     async fetchWithRetry(url, options, retries = this.config.retryCount) {
         let lastError;
         
@@ -197,9 +197,6 @@ class App {
         throw lastError;
     }
     
-    /**
-     * 延迟函数
-     */
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -252,13 +249,15 @@ class App {
         
         for (const book of results) {
             const sources = book.originNames || [book.originName];
+            const inShelf = this.bookshelfManager.hasBook(book.bookUrl);
+            
             html += `
                 <div class="book-item" onclick="app.showBookDetail('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
                     <div class="book-cover">
                         ${book.coverUrl ? `<img src="${book.coverUrl}" onerror="this.style.display='none'">` : ''}
                     </div>
                     <div class="book-info">
-                        <h3>${this.escapeHtml(book.name)}</h3>
+                        <h3>${this.escapeHtml(book.name)} ${inShelf ? '<span class="in-shelf">📚</span>' : ''}</h3>
                         <div class="meta">
                             <span class="author">${this.escapeHtml(book.author || '未知作者')}</span>
                             <span class="source-count">${sources.length}个来源</span>
@@ -272,9 +271,8 @@ class App {
         resultsDiv.innerHTML = html;
     }
     
-    /**
-     * 显示书籍详情 - 带缓存
-     */
+    // ==================== 书籍详情 ====================
+    
     async showBookDetail(bookUrl, origin) {
         this.currentSource = this.sourceManager.getSource(origin);
         if (!this.currentSource) {
@@ -288,7 +286,6 @@ class App {
         modalContent.innerHTML = '<div class="loading">加载中...</div>';
         
         try {
-            // 检查缓存
             const cacheKey = `book_${bookUrl}`;
             let data = this.cacheManager.get(cacheKey);
             
@@ -305,7 +302,6 @@ class App {
                     throw new Error(data.error || '获取失败');
                 }
                 
-                // 缓存结果
                 this.cacheManager.set(cacheKey, data);
             }
             
@@ -332,6 +328,8 @@ class App {
     
     renderBookDetail(book) {
         const modalContent = document.getElementById('bookModalContent');
+        const inShelf = this.bookshelfManager.hasBook(book.bookUrl);
+        const shelfBook = this.bookshelfManager.getBook(book.bookUrl);
         
         modalContent.innerHTML = `
             <div class="book-detail">
@@ -344,6 +342,7 @@ class App {
                             ${book.kind ? `<span>${this.escapeHtml(book.kind)}</span>` : ''}
                         </div>
                         <div class="source">来源: ${this.escapeHtml(this.currentSource.bookSourceName)}</div>
+                        ${shelfBook ? `<div class="progress">已读: 第${shelfBook.readChapter + 1}章</div>` : ''}
                     </div>
                 </div>
                 
@@ -354,8 +353,12 @@ class App {
                 
                 <div class="book-actions">
                     <button class="btn btn-primary" onclick="app.getChaptersAndDownload()">
-                        开始下载
+                        ${inShelf ? '更新下载' : '开始下载'}
                     </button>
+                    ${inShelf ? 
+                        `<button class="btn btn-secondary" onclick="app.removeFromShelf()">移出书架</button>` :
+                        `<button class="btn btn-secondary" onclick="app.addToShelf()">加入书架</button>`
+                    }
                     <button class="btn btn-secondary" onclick="app.showChangeSource()">
                         换源
                     </button>
@@ -367,9 +370,212 @@ class App {
         `;
     }
     
-    /**
-     * 换源功能
-     */
+    // ==================== 书架功能 ====================
+    
+    addToShelf() {
+        if (!this.currentBook || !this.currentSource) return;
+        
+        this.bookshelfManager.addBook(this.currentBook, this.currentSource);
+        this.showToast('已加入书架');
+        this.renderBookDetail(this.currentBook);
+        this.renderBookshelf();
+    }
+    
+    removeFromShelf() {
+        if (!this.currentBook) return;
+        
+        if (confirm('确定从书架移除？')) {
+            this.bookshelfManager.removeBook(this.currentBook.bookUrl);
+            this.showToast('已移出书架');
+            this.renderBookDetail(this.currentBook);
+            this.renderBookshelf();
+        }
+    }
+    
+    renderBookshelf() {
+        const books = this.bookshelfManager.getAllBooks();
+        const listDiv = document.getElementById('bookshelfList');
+        
+        if (!listDiv) return;
+        
+        if (books.length === 0) {
+            listDiv.innerHTML = '<div class="empty">书架空空如也</div>';
+            return;
+        }
+        
+        // 按更新时间排序
+        books.sort((a, b) => (b.updateTime || 0) - (a.updateTime || 0));
+        
+        let html = '';
+        
+        for (const book of books) {
+            html += `
+                <div class="book-item" onclick="app.openFromShelf('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
+                    <div class="book-cover">
+                        ${book.coverUrl ? `<img src="${book.coverUrl}" onerror="this.style.display='none'">` : ''}
+                    </div>
+                    <div class="book-info">
+                        <h3>${this.escapeHtml(book.name)}</h3>
+                        <div class="meta">
+                            <span class="author">${this.escapeHtml(book.author || '未知作者')}</span>
+                        </div>
+                        ${book.readChapterTitle ? `<div class="progress">已读: ${this.escapeHtml(book.readChapterTitle)}</div>` : ''}
+                        ${book.lastChapter ? `<div class="latest">最新: ${this.escapeHtml(book.lastChapter)}</div>` : ''}
+                    </div>
+                    <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); app.removeBookFromShelf('${this.escapeAttr(book.bookUrl)}')">删除</button>
+                </div>
+            `;
+        }
+        
+        listDiv.innerHTML = html;
+    }
+    
+    openFromShelf(bookUrl, origin) {
+        this.currentSource = this.sourceManager.getSource(origin);
+        this.currentBook = this.bookshelfManager.getBook(bookUrl);
+        
+        if (!this.currentSource) {
+            this.showToast('书源不存在', true);
+            return;
+        }
+        
+        const modal = document.getElementById('bookModal');
+        const modalContent = document.getElementById('bookModalContent');
+        modal.classList.add('active');
+        
+        this.renderBookDetail(this.currentBook);
+    }
+    
+    removeBookFromShelf(bookUrl) {
+        if (confirm('确定从书架移除？')) {
+            this.bookshelfManager.removeBook(bookUrl);
+            this.renderBookshelf();
+            this.showToast('已移出书架');
+        }
+    }
+    
+    // ==================== 发现页面 ====================
+    
+    renderExploreSources() {
+        const sources = this.sourceManager.getEnabledSources().filter(s => s.exploreUrl);
+        const selectDiv = document.getElementById('exploreSourceSelect');
+        
+        if (!selectDiv) return;
+        
+        if (sources.length === 0) {
+            selectDiv.innerHTML = '<div class="empty">没有支持发现的书源</div>';
+            return;
+        }
+        
+        let html = '<select id="exploreSource" onchange="app.loadExplore()"><option value="">选择书源</option>';
+        
+        for (const source of sources) {
+            html += `<option value="${this.escapeAttr(source.bookSourceUrl)}">${this.escapeHtml(source.bookSourceName)}</option>`;
+        }
+        
+        html += '</select>';
+        selectDiv.innerHTML = html;
+    }
+    
+    async loadExplore() {
+        const sourceUrl = document.getElementById('exploreSource')?.value;
+        if (!sourceUrl) return;
+        
+        this.currentExploreSource = this.sourceManager.getSource(sourceUrl);
+        if (!this.currentExploreSource || !this.currentExploreSource.exploreUrl) {
+            this.showToast('书源不支持发现', true);
+            return;
+        }
+        
+        this.explorePage = 1;
+        await this.fetchExplore();
+    }
+    
+    async fetchExplore() {
+        if (!this.currentExploreSource) return;
+        
+        const resultsDiv = document.getElementById('exploreResults');
+        resultsDiv.innerHTML = '<div class="loading">加载中...</div>';
+        
+        try {
+            const response = await fetch('/api/explore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    exploreUrl: this.currentExploreSource.exploreUrl,
+                    page: this.explorePage
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || '加载失败');
+            }
+            
+            const books = HtmlParser.parseSearchResult(
+                data.html,
+                this.currentExploreSource.ruleExplore || this.currentExploreSource.ruleSearch,
+                data.baseUrl,
+                this.currentExploreSource
+            );
+            
+            this.exploreResults = books;
+            this.renderExploreResults(books);
+            
+        } catch (e) {
+            console.error('发现加载失败:', e);
+            resultsDiv.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+        }
+    }
+    
+    renderExploreResults(books) {
+        const resultsDiv = document.getElementById('exploreResults');
+        
+        if (books.length === 0) {
+            resultsDiv.innerHTML = '<div class="empty">没有内容</div>';
+            return;
+        }
+        
+        let html = '<div class="explore-nav">';
+        html += `<button class="btn btn-small btn-secondary" onclick="app.prevExplorePage()">上一页</button>`;
+        html += `<span>第 ${this.explorePage} 页</span>`;
+        html += `<button class="btn btn-small btn-secondary" onclick="app.nextExplorePage()">下一页</button>`;
+        html += '</div>';
+        
+        for (const book of books) {
+            html += `
+                <div class="book-item" onclick="app.showBookDetail('${this.escapeAttr(book.bookUrl)}', '${this.escapeAttr(book.origin)}')">
+                    <div class="book-cover">
+                        ${book.coverUrl ? `<img src="${book.coverUrl}" onerror="this.style.display='none'">` : ''}
+                    </div>
+                    <div class="book-info">
+                        <h3>${this.escapeHtml(book.name)}</h3>
+                        <div class="meta">
+                            <span class="author">${this.escapeHtml(book.author || '未知作者')}</span>
+                        </div>
+                        ${book.lastChapter ? `<div class="latest">最新: ${this.escapeHtml(book.lastChapter)}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        resultsDiv.innerHTML = html;
+    }
+    
+    async prevExplorePage() {
+        if (this.explorePage <= 1) return;
+        this.explorePage--;
+        await this.fetchExplore();
+    }
+    
+    async nextExplorePage() {
+        this.explorePage++;
+        await this.fetchExplore();
+    }
+    
+    // ==================== 换源功能 ====================
+    
     async showChangeSource() {
         if (!this.currentBook) return;
         
@@ -377,7 +583,6 @@ class App {
         modalContent.innerHTML = '<div class="loading">搜索其他书源...</div>';
         
         try {
-            // 搜索同名书籍
             const sources = this.sourceManager.getEnabledSources().filter(
                 s => s.bookSourceUrl !== this.currentSource.bookSourceUrl
             );
@@ -416,7 +621,6 @@ class App {
                 }
             }
             
-            // 过滤同名同作者
             const sameBooks = allBooks.filter(b => 
                 b.name === this.currentBook.name && 
                 (!this.currentBook.author || b.author === this.currentBook.author)
@@ -435,17 +639,10 @@ class App {
         }
     }
     
-    /**
-     * 渲染换源列表
-     */
     renderChangeSourceList(books) {
         const modalContent = document.getElementById('bookModalContent');
         
-        let html = `
-            <div class="change-source">
-                <h3>选择其他来源 (${books.length})</h3>
-                <div class="source-list">
-        `;
+        let html = `<div class="change-source"><h3>选择其他来源 (${books.length})</h3><div class="source-list">`;
         
         for (const book of books) {
             html += `
@@ -460,20 +657,26 @@ class App {
         modalContent.innerHTML = html;
     }
     
-    /**
-     * 切换书源
-     */
     async changeSource(bookUrl, origin) {
         this.currentSource = this.sourceManager.getSource(origin);
         this.currentBook = { ...this.currentBook, bookUrl: bookUrl, origin: origin };
+        
+        // 更新书架
+        if (this.bookshelfManager.hasBook(this.currentBook.bookUrl)) {
+            this.bookshelfManager.updateBook(this.currentBook.bookUrl, {
+                bookUrl: bookUrl,
+                origin: origin,
+                originName: this.currentSource.bookSourceName
+            });
+            this.renderBookshelf();
+        }
         
         this.showToast('已切换书源');
         this.renderBookDetail(this.currentBook);
     }
     
-    /**
-     * 获取目录并下载
-     */
+    // ==================== 下载功能 ====================
+    
     async getChaptersAndDownload() {
         if (!this.currentBook || !this.currentSource) return;
         
@@ -481,7 +684,6 @@ class App {
         modalContent.innerHTML = '<div class="loading">获取目录中...</div>';
         
         try {
-            // 检查缓存
             const cacheKey = `toc_${this.currentBook.tocUrl || this.currentBook.bookUrl}`;
             let data = this.cacheManager.get(cacheKey);
             
@@ -513,6 +715,15 @@ class App {
                 throw new Error('解析目录失败，没有找到章节');
             }
             
+            // 更新书架信息
+            if (this.bookshelfManager.hasBook(this.currentBook.bookUrl)) {
+                this.bookshelfManager.updateBook(this.currentBook.bookUrl, {
+                    lastChapter: this.currentChapters[this.currentChapters.length - 1]?.title,
+                    chapterCount: this.currentChapters.length
+                });
+                this.renderBookshelf();
+            }
+            
             this.startDownload();
             
         } catch (e) {
@@ -521,9 +732,6 @@ class App {
         }
     }
     
-    /**
-     * 并发下载 - 带缓存
-     */
     async startDownload() {
         if (this.isDownloading) return;
         
@@ -561,7 +769,6 @@ class App {
             
             const chapter = this.currentChapters[index];
             
-            // 检查缓存
             const cacheKey = `content_${chapter.url}`;
             let content = this.cacheManager.get(cacheKey);
             
@@ -582,7 +789,6 @@ class App {
                             data.baseUrl
                         );
                         
-                        // 缓存内容
                         this.cacheManager.set(cacheKey, content);
                     }
                 } catch (e) {
@@ -599,7 +805,6 @@ class App {
             updateProgress();
         };
         
-        // 分批并发下载
         for (let i = 0; i < total; i += concurrent) {
             if (this.downloadAborted) break;
             
@@ -690,6 +895,8 @@ class App {
         document.getElementById('bookModal')?.classList.remove('active');
     }
     
+    // ==================== 书源管理 ====================
+    
     async handleImportFile(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -701,6 +908,7 @@ class App {
             this.showToast(`导入成功: 新增 ${result.added} 个，更新 ${result.updated} 个`);
             this.updateStats();
             this.renderSourceList();
+            this.renderExploreSources();
             
         } catch (e) {
             this.showToast('导入失败: ' + e.message, true);
@@ -723,6 +931,7 @@ class App {
             this.showToast(`导入成功: 新增 ${result.added} 个，更新 ${result.updated} 个`);
             this.updateStats();
             this.renderSourceList();
+            this.renderExploreSources();
             
         } catch (e) {
             this.showToast('导入失败: ' + e.message, true);
@@ -869,7 +1078,7 @@ class App {
             html += `
                 <div class="source-item ${source.enabled ? '' : 'disabled'} ${isInvalid ? 'invalid' : ''}">
                     <div class="source-info">
-                        <span class="source-name">${this.escapeHtml(source.bookSourceName)}${isInvalid ? ' (失效)' : ''}</span>
+                        <span class="source-name">${this.escapeHtml(source.bookSourceName)}${isInvalid ? ' (失效)' : ''}${source.exploreUrl ? ' 🌐' : ''}</span>
                         <span class="source-url">${this.escapeHtml(source.bookSourceUrl)}</span>
                     </div>
                     <div class="source-actions">
@@ -894,6 +1103,7 @@ class App {
         if (source) {
             this.sourceManager.setSourceEnabled(url, !source.enabled);
             this.renderSourceList();
+            this.renderExploreSources();
             this.updateStats();
         }
     }
@@ -903,6 +1113,7 @@ class App {
             this.sourceManager.removeSource(url);
             this.invalidSourceManager.remove(url);
             this.renderSourceList();
+            this.renderExploreSources();
             this.updateStats();
             this.showToast('已删除书源');
         }
@@ -915,11 +1126,14 @@ class App {
         if (countEl) {
             countEl.textContent = `${stats.enabled} / ${stats.total}`;
         }
+        
+        const shelfStats = this.bookshelfManager.getStats();
+        const shelfCountEl = document.getElementById('bookshelfCount');
+        if (shelfCountEl) {
+            shelfCountEl.textContent = shelfStats.total;
+        }
     }
     
-    /**
-     * 渲染失效书源列表
-     */
     renderInvalidSources() {
         const invalidSources = this.invalidSourceManager.getAll();
         const listDiv = document.getElementById('invalidSourceList');
@@ -945,9 +1159,6 @@ class App {
         listDiv.innerHTML = html;
     }
     
-    /**
-     * 清除失效书源标记
-     */
     clearInvalidSources() {
         this.invalidSourceManager.clear();
         this.renderInvalidSources();
@@ -958,6 +1169,8 @@ class App {
     render() {
         this.renderSourceList();
         this.renderInvalidSources();
+        this.renderBookshelf();
+        this.renderExploreSources();
         
         const subscriptions = this.subscribeManager.getAllSubscriptions();
         const subListDiv = document.getElementById('subscribeList');

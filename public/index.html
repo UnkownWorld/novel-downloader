@@ -15,8 +15,10 @@
         
         <nav class="tabs">
             <button class="tab-btn active" data-tab="search">🔍 搜索</button>
-            <button class="tab-btn" data-tab="sources">📖 书源管理</button>
-            <button class="tab-btn" data-tab="subscribe">📡 书源订阅</button>
+            <button class="tab-btn" data-tab="bookshelf">📚 书架</button>
+            <button class="tab-btn" data-tab="explore">🌐 发现</button>
+            <button class="tab-btn" data-tab="sources">📖 书源</button>
+            <button class="tab-btn" data-tab="subscribe">📡 订阅</button>
             <button class="tab-btn" data-tab="settings">⚙️ 设置</button>
         </nav>
         
@@ -36,6 +38,35 @@
                 </div>
                 <div id="searchResults" class="book-list">
                     <div class="empty">输入关键词开始搜索</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 书架 -->
+        <div id="bookshelfTab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">我的书架</span>
+                    <span id="bookshelfCount">0 本</span>
+                </div>
+                <div id="bookshelfList" class="book-list">
+                    <div class="empty">书架空空如也，去搜索添加吧</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 发现 -->
+        <div id="exploreTab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">发现好书</span>
+                </div>
+                <div id="exploreSourceSelect"></div>
+            </div>
+            
+            <div class="card">
+                <div id="exploreResults" class="book-list">
+                    <div class="empty">选择书源开始发现</div>
                 </div>
             </div>
         </div>
@@ -167,6 +198,7 @@
     <script src="js/booksource-manager.js"></script>
     <script src="js/subscribe-manager.js"></script>
     <script src="js/cache-manager.js"></script>
+    <script src="js/bookshelf-manager.js"></script>
     <script src="js/html-parser.js"></script>
     <script src="js/app.js"></script>
 </body>
