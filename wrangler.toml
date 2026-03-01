@@ -1,0 +1,20 @@
+name = "novel-downloader"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "public"
+
+[vars]
+ENVIRONMENT = "production"
+
+# KV命名空间绑定 - 部署时需要替换为实际的ID
+# 使用 wrangler kv:namespace create BOOK_SOURCES 创建
+# 使用 wrangler kv:namespace create DOWNLOADS 创建
+[[kv_namespaces]]
+binding = "BOOK_SOURCES"
+id = "替换为你的KV命名空间ID"
+
+[[kv_namespaces]]
+binding = "DOWNLOADS"
+id = "替换为你的KV命名空间ID"
+
+[functions]
+directory = "functions"

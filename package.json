@@ -1,0 +1,17 @@
+{
+  "name": "novel-downloader",
+  "version": "1.0.0",
+  "description": "基于Legado书源的小说下载器Web版",
+  "scripts": {
+    "dev": "npx wrangler pages dev public --compatibility-date=2024-01-01 --kv=BOOK_SOURCES --kv=DOWNLOADS",
+    "deploy": "npx wrangler pages deploy public",
+    "build": "echo 'Static site, no build needed'"
+  },
+  "keywords": ["novel", "downloader", "legado", "cloudflare"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "@cloudflare/workers-types": "^4.0.0"
+  }
+}
