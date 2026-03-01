@@ -88,28 +88,30 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
         
         // 构建搜索URL
         let searchUrl = source.searchUrl;
+        const baseUrl = source.bookSourceUrl;
         
         // 多种编码方式尝试
         const encodedKeyword = encodeURIComponent(keyword);
-        const encodedKeywordGBK = keyword; // GBK编码需要后端支持，这里先用UTF-8
         
         // 替换关键词（支持多种占位符）
         searchUrl = searchUrl.replace(/\{\{key\}\}/g, encodedKeyword);
         searchUrl = searchUrl.replace(/\{\{keyword\}\}/g, encodedKeyword);
         searchUrl = searchUrl.replace(/searchKey=([^&]*)/g, `searchKey=${encodedKeyword}`);
+        searchUrl = searchUrl.replace(/searchkey=([^&]*)/g, `searchkey=${encodedKeyword}`);
         searchUrl = searchUrl.replace(/q=([^&]*)/g, `q=${encodedKeyword}`);
         searchUrl = searchUrl.replace(/wd=([^&]*)/g, `wd=${encodedKeyword}`);
         searchUrl = searchUrl.replace(/\{\{page\}\}/g, page);
         
-        // 解析URL选项
+        // 解析URL选项（格式: "url,{options}"）
         let method = 'GET';
         let headers = {};
         let body = null;
         let actualUrl = searchUrl;
         
+        // 先分离 URL 和选项
         const optionMatch = searchUrl.match(/,\s*(\{[\s\S]*\})$/);
         if (optionMatch) {
-            actualUrl = searchUrl.substring(0, optionMatch.index);
+            actualUrl = searchUrl.substring(0, optionMatch.index).trim();
             try {
                 const options = JSON.parse(optionMatch[1]);
                 method = options.method || 'GET';
@@ -120,8 +122,14 @@ async function fetchSearchHtml(source, keyword, page, timeout, debug) {
                     body = body.replace(/\{\{keyword\}\}/g, encodedKeyword);
                 }
             } catch (e) {
-                // 忽略
+                console.error('解析搜索URL选项失败:', e);
             }
+        }
+        
+        // 判断是否为相对路径，需要拼接 baseUrl
+        if (actualUrl && !actualUrl.startsWith('http://') && !actualUrl.startsWith('https://')) {
+            // 相对路径，拼接 baseUrl
+            actualUrl = baseUrl.replace(/\/$/, '') + (actualUrl.startsWith('/') ? actualUrl : '/' + actualUrl);
         }
         
         // 发起请求

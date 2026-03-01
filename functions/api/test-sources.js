@@ -222,30 +222,43 @@ async function testContent(source, book, chapter, timeout) {
  * 构建搜索URL
  */
 function buildSearchUrl(source, keyword) {
-    let url = source.searchUrl;
+    let searchUrl = source.searchUrl;
+    const baseUrl = source.bookSourceUrl;
     const method = source.searchUrl.includes('POST') ? 'POST' : 'GET';
     
     // 替换关键词
-    url = url.replace(/\{\{key\}\}/g, encodeURIComponent(keyword));
-    url = url.replace(/searchKey=([^&]*)/g, `searchKey=${encodeURIComponent(keyword)}`);
+    searchUrl = searchUrl.replace(/\{\{key\}\}/g, encodeURIComponent(keyword));
+    searchUrl = searchUrl.replace(/\{\{keyword\}\}/g, encodeURIComponent(keyword));
+    searchUrl = searchUrl.replace(/searchKey=([^&]*)/g, `searchKey=${encodeURIComponent(keyword)}`);
+    searchUrl = searchUrl.replace(/searchkey=([^&]*)/g, `searchkey=${encodeURIComponent(keyword)}`);
     
     // 解析URL选项
-    const optionMatch = url.match(/,\s*(\{[\s\S]*\})$/);
+    const optionMatch = searchUrl.match(/,\s*(\{[\s\S]*\})$/);
     let headers = {};
     let body = null;
+    let actualUrl = searchUrl;
     
     if (optionMatch) {
-        url = url.substring(0, optionMatch.index);
+        actualUrl = searchUrl.substring(0, optionMatch.index).trim();
         try {
             const options = JSON.parse(optionMatch[1]);
             headers = options.headers || {};
             body = options.body;
+            if (typeof body === 'string') {
+                body = body.replace(/\{\{key\}\}/g, encodeURIComponent(keyword));
+                body = body.replace(/\{\{keyword\}\}/g, encodeURIComponent(keyword));
+            }
         } catch (e) {
             // 忽略
         }
     }
     
-    return { url, method, headers, body };
+    // 判断是否为相对路径，需要拼接 baseUrl
+    if (actualUrl && !actualUrl.startsWith('http://') && !actualUrl.startsWith('https://')) {
+        actualUrl = baseUrl.replace(/\/$/, '') + (actualUrl.startsWith('/') ? actualUrl : '/' + actualUrl);
+    }
+    
+    return { url: actualUrl, method, headers, body };
 }
 
 /**
