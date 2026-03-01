@@ -1209,34 +1209,111 @@
             
             const testStatus = document.getElementById('testStatus');
             testStatus.classList.remove('hidden');
-            testStatus.innerHTML = '<div style="margin-bottom:8px">正在测试书源，请稍候...</div>';
+            testStatus.innerHTML = `
+                <div style="margin-bottom:8px">正在测试书源...</div>
+                <div style="font-size:0.8rem;color:rgba(255,255,255,0.6)">测试方法: 访问首页 + 尝试搜索</div>
+            `;
             
             const enabledSources = bookSources.filter(s => s.enabled !== false);
             const total = enabledSources.length;
             let valid = 0;
             let invalid = 0;
+            let slow = 0;
             const invalidList = [];
+            const slowList = [];
+            const testResults = [];
             
-            // 并发测试，每次最多5个
-            const batchSize = 5;
+            // 测试关键词
+            const testKeyword = '斗罗';
+            
+            // 并发测试，每次最多3个（避免请求过多）
+            const batchSize = 3;
             for (let i = 0; i < enabledSources.length; i += batchSize) {
                 const batch = enabledSources.slice(i, i + batchSize);
                 const results = await Promise.all(batch.map(async (source) => {
+                    const testResult = {
+                        source,
+                        homepageOk: false,
+                        searchOk: false,
+                        hasResults: false,
+                        responseTime: 0,
+                        error: ''
+                    };
+                    
                     try {
-                        // 测试书源首页是否可访问
-                        const result = await fetchHtml(source.bookSourceUrl);
-                        return { source, success: result.success };
+                        const startTime = Date.now();
+                        
+                        // 第一步：测试首页是否可访问
+                        const homeResult = await fetchHtml(source.bookSourceUrl);
+                        testResult.homepageOk = homeResult.success;
+                        
+                        if (!homeResult.success) {
+                            testResult.error = '首页无法访问';
+                            return testResult;
+                        }
+                        
+                        // 第二步：测试搜索功能（如果有searchUrl）
+                        if (source.searchUrl) {
+                            try {
+                                const searchUrl = source.searchUrl
+                                    .replace('{{key}}', encodeURIComponent(testKeyword))
+                                    .replace('{{page}}', '1');
+                                const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
+                                
+                                const searchResult = await fetchHtml(fullUrl);
+                                testResult.searchOk = searchResult.success;
+                                
+                                if (searchResult.success && searchResult.content) {
+                                    // 第三步：检查搜索结果是否有效
+                                    const rule = source.ruleSearch || {};
+                                    const parser = new AnalyzeRule().setContent(searchResult.content, searchResult.url);
+                                    const items = parser.getElements(rule.bookList);
+                                    
+                                    testResult.hasResults = items && items.length > 0;
+                                    
+                                    if (!testResult.hasResults) {
+                                        testResult.error = '搜索无结果';
+                                    }
+                                } else {
+                                    testResult.error = '搜索请求失败';
+                                }
+                            } catch (searchErr) {
+                                testResult.error = '搜索出错: ' + (searchErr.message || '未知错误');
+                            }
+                        } else {
+                            testResult.error = '无搜索地址';
+                        }
+                        
+                        testResult.responseTime = Date.now() - startTime;
+                        
                     } catch (e) {
-                        return { source, success: false };
+                        testResult.error = e.message || '测试失败';
                     }
+                    
+                    return testResult;
                 }));
                 
-                for (const { source, success } of results) {
-                    if (success) {
+                // 处理测试结果
+                for (const result of results) {
+                    testResults.push(result);
+                    
+                    // 判断有效性：
+                    // 有效 = 首页可访问 且 (搜索成功且有结果 或 无搜索地址但首页正常)
+                    const isValid = result.homepageOk && (result.hasResults || (result.searchOk && !result.ruleSearch));
+                    const isSlow = result.responseTime > 10000; // 超过10秒算慢
+                    
+                    if (isValid) {
                         valid++;
+                        if (isSlow) {
+                            slow++;
+                            slowList.push(result.source.bookSourceName);
+                        }
                     } else {
                         invalid++;
-                        invalidList.push(source.bookSourceName);
+                        invalidList.push({
+                            name: result.source.bookSourceName,
+                            error: result.error || '未知错误'
+                        });
                     }
                 }
                 
@@ -1246,20 +1323,30 @@
                     <div style="margin-bottom:8px">测试进度: ${progress}/${total}</div>
                     <div style="color:#00b894">✓ 有效: ${valid}</div>
                     <div style="color:#e94560">✗ 失效: ${invalid}</div>
+                    ${slow > 0 ? `<div style="color:#ffc107">⚠ 响应慢: ${slow}</div>` : ''}
                 `;
             }
             
             // 显示最终结果
+            const invalidNames = invalidList.map(i => i.name);
             testStatus.innerHTML = `
                 <div style="margin-bottom:8px;font-weight:bold">测试完成</div>
                 <div style="color:#00b894">✓ 有效书源: ${valid}</div>
                 <div style="color:#e94560">✗ 失效书源: ${invalid}</div>
-                ${invalid > 0 ? `<div style="margin-top:8px;font-size:0.8rem;color:rgba(255,255,255,0.6)">失效书源: ${invalidList.slice(0, 5).join(', ')}${invalid > 5 ? '...' : ''}</div>` : ''}
+                ${slow > 0 ? `<div style="color:#ffc107">⚠ 响应较慢: ${slow}</div>` : ''}
+                ${invalid > 0 ? `
+                    <div style="margin-top:8px;font-size:0.75rem;color:rgba(255,255,255,0.6);max-height:100px;overflow-y:auto">
+                        失效原因:<br>
+                        ${invalidList.slice(0, 10).map(i => `• ${i.name}: ${i.error}`).join('<br>')}
+                        ${invalid > 10 ? `<br>...还有 ${invalid - 10} 个` : ''}
+                    </div>
+                ` : ''}
                 ${invalid > 0 ? `<button class="btn btn-danger btn-small" style="margin-top:8px" onclick="removeInvalidSources()">删除 ${invalid} 个失效书源</button>` : ''}
             `;
             
             // 保存失效书源列表
-            window.invalidSources = invalidList;
+            window.invalidSources = invalidNames;
+            window.testResults = testResults;
             showToast(`测试完成: ${valid} 个有效, ${invalid} 个失效`);
         }
         
