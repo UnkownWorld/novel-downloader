@@ -1,6 +1,6 @@
 /**
- * 主应用模块 - 重写版
- * 后端获取HTML，前端解析
+ * 主应用模块 - 优化版
+ * 支持并发下载
  */
 
 class App {
@@ -8,25 +8,22 @@ class App {
         this.sourceManager = new BookSourceManager();
         this.subscribeManager = new SubscribeManager();
         
-        // 状态
         this.currentTab = 'search';
         this.searchResults = [];
         this.currentBook = null;
         this.currentSource = null;
         this.currentChapters = [];
         this.downloadContent = '';
+        this.isDownloading = false;
+        this.downloadAborted = false;
         
-        // 配置
         this.config = {
             searchConcurrent: 10,
-            searchTimeout: 30000,
-            downloadConcurrent: 5
+            downloadConcurrent: 10,  // 下载并发数
+            searchTimeout: 30000
         };
     }
     
-    /**
-     * 初始化
-     */
     async init() {
         await this.sourceManager.init();
         await this.subscribeManager.init();
@@ -34,22 +31,15 @@ class App {
         this.bindEvents();
         this.render();
         this.updateStats();
-        
-        console.log('App initialized');
     }
     
-    /**
-     * 绑定事件
-     */
     bindEvents() {
-        // 标签切换
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 this.switchTab(e.target.dataset.tab);
             });
         });
         
-        // 搜索
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
         
@@ -63,16 +53,12 @@ class App {
             searchBtn.addEventListener('click', () => this.search());
         }
         
-        // 导入书源
         const importInput = document.getElementById('importInput');
         if (importInput) {
             importInput.addEventListener('change', (e) => this.handleImportFile(e));
         }
     }
     
-    /**
-     * 切换标签
-     */
     switchTab(tab) {
         this.currentTab = tab;
         
@@ -85,9 +71,6 @@ class App {
         });
     }
     
-    /**
-     * 搜索
-     */
     async search() {
         const keyword = document.getElementById('searchInput')?.value?.trim();
         
@@ -104,7 +87,6 @@ class App {
             return;
         }
         
-        // 显示搜索中状态
         const searchBtn = document.getElementById('searchBtn');
         const originalText = searchBtn.textContent;
         searchBtn.textContent = '搜索中...';
@@ -114,7 +96,6 @@ class App {
         resultsDiv.innerHTML = '<div class="loading">正在搜索...</div>';
         
         try {
-            // 调用搜索API获取HTML
             const response = await fetch('/api/search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -131,7 +112,6 @@ class App {
                 throw new Error(data.error || '搜索失败');
             }
             
-            // 在前端解析HTML
             const allBooks = [];
             
             for (const result of data.results) {
@@ -149,7 +129,6 @@ class App {
                 }
             }
             
-            // 合并去重
             this.searchResults = this.mergeResults(allBooks, keyword);
             
             this.renderSearchResults(this.searchResults);
@@ -165,9 +144,6 @@ class App {
         }
     }
     
-    /**
-     * 合并搜索结果
-     */
     mergeResults(results, keyword) {
         const merged = new Map();
         
@@ -189,7 +165,6 @@ class App {
             }
         }
         
-        // 排序
         return Array.from(merged.values()).sort((a, b) => {
             const aExact = a.name === keyword || a.author === keyword;
             const bExact = b.name === keyword || b.author === keyword;
@@ -205,9 +180,6 @@ class App {
         });
     }
     
-    /**
-     * 渲染搜索结果
-     */
     renderSearchResults(results) {
         const resultsDiv = document.getElementById('searchResults');
         
@@ -232,7 +204,6 @@ class App {
                             <span class="source-count">${sources.length}个来源</span>
                         </div>
                         ${book.lastChapter ? `<div class="latest">最新: ${this.escapeHtml(book.lastChapter)}</div>` : ''}
-                        ${book.intro ? `<div class="intro">${this.escapeHtml(book.intro)}</div>` : ''}
                     </div>
                 </div>
             `;
@@ -241,9 +212,6 @@ class App {
         resultsDiv.innerHTML = html;
     }
     
-    /**
-     * 显示书籍详情
-     */
     async showBookDetail(bookUrl, origin) {
         this.currentSource = this.sourceManager.getSource(origin);
         if (!this.currentSource) {
@@ -257,7 +225,6 @@ class App {
         modalContent.innerHTML = '<div class="loading">加载中...</div>';
         
         try {
-            // 获取书籍页面HTML
             const response = await fetch('/api/book-info', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -270,7 +237,6 @@ class App {
                 throw new Error(data.error || '获取失败');
             }
             
-            // 在前端解析
             const bookInfo = HtmlParser.parseBookInfo(
                 data.html, 
                 this.currentSource.ruleBookInfo, 
@@ -292,9 +258,6 @@ class App {
         }
     }
     
-    /**
-     * 渲染书籍详情
-     */
     renderBookDetail(book) {
         const modalContent = document.getElementById('bookModalContent');
         
@@ -329,9 +292,6 @@ class App {
         `;
     }
     
-    /**
-     * 获取目录并下载
-     */
     async getChaptersAndDownload() {
         if (!this.currentBook || !this.currentSource) return;
         
@@ -339,7 +299,6 @@ class App {
         modalContent.innerHTML = '<div class="loading">获取目录中...</div>';
         
         try {
-            // 获取目录页面HTML
             const response = await fetch('/api/chapters', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -354,7 +313,6 @@ class App {
                 throw new Error(data.error || '获取目录失败');
             }
             
-            // 在前端解析
             this.currentChapters = HtmlParser.parseChapterList(
                 data.html, 
                 this.currentSource.ruleToc, 
@@ -365,7 +323,6 @@ class App {
                 throw new Error('解析目录失败，没有找到章节');
             }
             
-            // 开始下载
             this.startDownload();
             
         } catch (e) {
@@ -375,35 +332,48 @@ class App {
     }
     
     /**
-     * 开始下载
+     * 并发下载
      */
     async startDownload() {
+        if (this.isDownloading) return;
+        
+        this.isDownloading = true;
+        this.downloadAborted = false;
+        
         const modalContent = document.getElementById('bookModalContent');
         const total = this.currentChapters.length;
+        const concurrent = this.config.downloadConcurrent;
+        
+        // 初始化内容数组
+        const chapters = new Array(total);
+        let completed = 0;
         
         modalContent.innerHTML = `
             <div class="download-progress">
-                <h3>下载中...</h3>
+                <h3>下载中... (并发: ${concurrent})</h3>
                 <div class="progress-bar">
                     <div class="progress-fill" id="downloadProgressFill" style="width: 0%"></div>
                 </div>
                 <div class="progress-text" id="downloadProgressText">0 / ${total}</div>
+                <button class="btn btn-danger btn-small" onclick="app.abortDownload()" style="margin-top:10px">停止下载</button>
             </div>
         `;
         
-        const content = [];
-        content.push(`${this.currentBook.name}`);
-        content.push(`作者: ${this.currentBook.author || '未知'}`);
-        content.push(`来源: ${this.currentSource.bookSourceName}`);
-        content.push('');
-        content.push('='.repeat(50));
-        content.push('');
+        const updateProgress = () => {
+            const percent = (completed / total * 100).toFixed(1);
+            const fill = document.getElementById('downloadProgressFill');
+            const text = document.getElementById('downloadProgressText');
+            if (fill) fill.style.width = percent + '%';
+            if (text) text.textContent = `${completed} / ${total}`;
+        };
         
-        for (let i = 0; i < total; i++) {
-            const chapter = this.currentChapters[i];
+        // 并发下载函数
+        const downloadChapter = async (index) => {
+            if (this.downloadAborted) return;
+            
+            const chapter = this.currentChapters[index];
             
             try {
-                // 获取章节内容
                 const response = await fetch('/api/content', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -413,37 +383,85 @@ class App {
                 const data = await response.json();
                 
                 if (data.success && data.html) {
-                    const chapterContent = HtmlParser.parseContent(
+                    const content = HtmlParser.parseContent(
                         data.html, 
                         this.currentSource.ruleContent, 
                         data.baseUrl
                     );
-                    
-                    content.push(`\n\n第${i + 1}章 ${chapter.title}\n\n${chapterContent}`);
+                    chapters[index] = {
+                        title: chapter.title,
+                        content: content || '[内容为空]'
+                    };
+                } else {
+                    chapters[index] = {
+                        title: chapter.title,
+                        content: '[下载失败]'
+                    };
                 }
-                
             } catch (e) {
-                console.error('下载章节失败:', e);
-                content.push(`\n\n第${i + 1}章 ${chapter.title}\n\n[下载失败]`);
+                chapters[index] = {
+                    title: chapter.title,
+                    content: '[下载失败]'
+                };
             }
             
-            // 更新进度
-            const progress = ((i + 1) / total * 100).toFixed(1);
-            const progressFill = document.getElementById('downloadProgressFill');
-            const progressText = document.getElementById('downloadProgressText');
+            completed++;
+            updateProgress();
+        };
+        
+        // 分批并发下载
+        for (let i = 0; i < total; i += concurrent) {
+            if (this.downloadAborted) break;
             
-            if (progressFill) progressFill.style.width = progress + '%';
-            if (progressText) progressText.textContent = `${i + 1} / ${total}`;
+            const batch = [];
+            for (let j = i; j < Math.min(i + concurrent, total); j++) {
+                batch.push(downloadChapter(j));
+            }
+            
+            await Promise.all(batch);
         }
         
         // 下载完成
+        if (!this.downloadAborted) {
+            this.assembleContent(chapters);
+        } else {
+            modalContent.innerHTML = '<div class="error">下载已停止</div>';
+        }
+        
+        this.isDownloading = false;
+    }
+    
+    /**
+     * 停止下载
+     */
+    abortDownload() {
+        this.downloadAborted = true;
+    }
+    
+    /**
+     * 组装内容
+     */
+    assembleContent(chapters) {
+        const content = [];
+        
+        content.push(this.currentBook.name);
+        content.push(`作者: ${this.currentBook.author || '未知'}`);
+        content.push(`来源: ${this.currentSource.bookSourceName}`);
+        content.push('');
+        content.push('='.repeat(50));
+        content.push('');
+        
+        for (let i = 0; i < chapters.length; i++) {
+            const chapter = chapters[i];
+            if (chapter) {
+                content.push(`\n\n第${i + 1}章 ${chapter.title}\n\n${chapter.content}`);
+            }
+        }
+        
         this.downloadContent = content.join('');
         this.downloadComplete();
     }
     
-    /**
-     * 下载完成
-     */
     downloadComplete() {
         const modalContent = document.getElementById('bookModalContent');
         
@@ -459,9 +477,6 @@ class App {
         `;
     }
     
-    /**
-     * 保存到文件
-     */
     saveToFile() {
         if (!this.downloadContent) return;
         
@@ -477,9 +492,6 @@ class App {
         this.showToast('文件已保存');
     }
     
-    /**
-     * 复制到剪贴板
-     */
     async copyToClipboard() {
         if (!this.downloadContent) return;
         
@@ -491,16 +503,10 @@ class App {
         }
     }
     
-    /**
-     * 关闭模态框
-     */
     closeModal() {
         document.getElementById('bookModal')?.classList.remove('active');
     }
     
-    /**
-     * 处理导入文件
-     */
     async handleImportFile(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -520,9 +526,6 @@ class App {
         event.target.value = '';
     }
     
-    /**
-     * 从URL导入书源
-     */
     async importFromUrl() {
         const url = prompt('请输入书源URL:');
         if (!url) return;
@@ -543,9 +546,6 @@ class App {
         }
     }
     
-    /**
-     * 导出书源
-     */
     exportSources() {
         const json = this.sourceManager.exportSources();
         const blob = new Blob([json], { type: 'application/json' });
@@ -559,9 +559,6 @@ class App {
         this.showToast('导出成功');
     }
     
-    /**
-     * 测试书源
-     */
     async testSources() {
         const sources = this.sourceManager.getEnabledSources();
         
@@ -591,7 +588,6 @@ class App {
                     continue;
                 }
                 
-                // 获取搜索页面
                 const response = await fetch('/api/search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -605,7 +601,6 @@ class App {
                 const data = await response.json();
                 
                 if (data.success && data.results[0]?.html) {
-                    // 解析结果
                     const books = HtmlParser.parseSearchResult(
                         data.results[0].html,
                         source.ruleSearch,
@@ -641,9 +636,6 @@ class App {
         this.renderTestResults(results);
     }
     
-    /**
-     * 渲染测试结果
-     */
     renderTestResults(results) {
         const statusDiv = document.getElementById('testStatus');
         
@@ -676,9 +668,6 @@ class App {
         statusDiv.innerHTML = html;
     }
     
-    /**
-     * 渲染书源列表
-     */
     renderSourceList() {
         const sources = this.sourceManager.getAllSources();
         const listDiv = document.getElementById('sourceList');
@@ -716,9 +705,6 @@ class App {
         listDiv.innerHTML = html;
     }
     
-    /**
-     * 切换书源状态
-     */
     toggleSource(url) {
         const source = this.sourceManager.getSource(url);
         if (source) {
@@ -728,9 +714,6 @@ class App {
         }
     }
     
-    /**
-     * 删除书源
-     */
     removeSource(url) {
         if (confirm('确定删除此书源？')) {
             this.sourceManager.removeSource(url);
@@ -740,9 +723,6 @@ class App {
         }
     }
     
-    /**
-     * 更新统计
-     */
     updateStats() {
         const stats = this.sourceManager.getStats();
         
@@ -752,9 +732,6 @@ class App {
         }
     }
     
-    /**
-     * 渲染主界面
-     */
     render() {
         this.renderSourceList();
         
@@ -785,9 +762,6 @@ class App {
         }
     }
     
-    /**
-     * 添加订阅
-     */
     async addSubscription() {
         const url = prompt('请输入订阅URL:');
         if (!url) return;
@@ -808,9 +782,6 @@ class App {
         }
     }
     
-    /**
-     * 刷新订阅
-     */
     async refreshSubscription(id) {
         try {
             const result = await this.subscribeManager.updateSubscription(id);
@@ -828,9 +799,6 @@ class App {
         }
     }
     
-    /**
-     * 删除订阅
-     */
     removeSubscription(id) {
         if (confirm('确定删除此订阅？')) {
             this.subscribeManager.removeSubscription(id);
@@ -839,9 +807,6 @@ class App {
         }
     }
     
-    /**
-     * 清除所有数据
-     */
     clearAllData() {
         if (confirm('确定清除所有数据？此操作不可恢复！')) {
             localStorage.clear();
@@ -849,9 +814,6 @@ class App {
         }
     }
     
-    /**
-     * 显示Toast
-     */
     showToast(message, isError = false) {
         const toast = document.createElement('div');
         toast.className = `toast ${isError ? 'error' : ''}`;
@@ -865,9 +827,6 @@ class App {
         }, 3000);
     }
     
-    /**
-     * HTML转义
-     */
     escapeHtml(str) {
         if (!str) return '';
         return str.toString()
@@ -878,9 +837,6 @@ class App {
             .replace(/'/g, '&#39;');
     }
     
-    /**
-     * 属性转义
-     */
     escapeAttr(str) {
         if (!str) return '';
         return str.toString()
@@ -889,10 +845,8 @@ class App {
     }
 }
 
-// 导出
 window.App = App;
 
-// 初始化
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
     app.init();
