@@ -1,0 +1,206 @@
+name: Update Book Sources
+
+on:
+  schedule:
+    # 每天 UTC 0:00 运行 (北京时间 8:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 手动触发
+
+jobs:
+  update-sources:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Update book sources
+        run: |
+          node << 'EOF'
+          const https = require('https');
+          const http = require('http');
+          const fs = require('fs');
+          const path = require('path');
+          
+          // 请求函数
+          function fetch(url) {
+            return new Promise((resolve, reject) => {
+              const client = url.startsWith('https') ? https : http;
+              const req = client.get(url, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                },
+                timeout: 30000
+              }, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                  return resolve(fetch(res.headers.location));
+                }
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve(data));
+              });
+              req.on('error', reject);
+              req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            });
+          }
+          
+          // 获取书源列表页
+          async function getSourceList() {
+            console.log('获取书源列表...');
+            const html = await fetch('https://www.yckceo.com/yuedu/shuyuan/index.html');
+            
+            // 解析书源ID
+            const idPattern = /\/yuedu\/shuyuan\/content\/id\/(\d+)\.html/g;
+            const ids = new Set();
+            let match;
+            while ((match = idPattern.exec(html)) !== null) {
+              ids.add(match[1]);
+            }
+            
+            console.log(`找到 ${ids.size} 个书源ID`);
+            return Array.from(ids);
+          }
+          
+          // 获取单个书源JSON
+          async function getSourceJson(id) {
+            try {
+              const jsonUrl = `https://www.yckceo.com/yuedu/shuyuans/json/id/${id}.json`;
+              const data = await fetch(jsonUrl);
+              const sources = JSON.parse(data);
+              return Array.isArray(sources) ? sources : [sources];
+            } catch (e) {
+              console.log(`书源 ${id} 获取失败: ${e.message}`);
+              return [];
+            }
+          }
+          
+          // 测试书源有效性
+          async function testSource(source) {
+            if (!source.bookSourceUrl) return false;
+            
+            try {
+              const testUrl = source.bookSourceUrl;
+              await new Promise((resolve, reject) => {
+                const client = testUrl.startsWith('https') ? https : http;
+                const req = client.get(testUrl, {
+                  headers: { 'User-Agent': 'Mozilla/5.0' },
+                  timeout: 10000
+                }, (res) => {
+                  if (res.statusCode >= 200 && res.statusCode < 500) {
+                    resolve();
+                  } else {
+                    reject(new Error(`Status: ${res.statusCode}`));
+                  }
+                });
+                req.on('error', reject);
+                req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+              });
+              return true;
+            } catch (e) {
+              return false;
+            }
+          }
+          
+          // 主函数
+          async function main() {
+            console.log('=== 开始更新书源 ===');
+            
+            // 读取现有书源
+            const sourcesPath = path.join(__dirname, 'public', 'sources.json');
+            let existingSources = [];
+            if (fs.existsSync(sourcesPath)) {
+              existingSources = JSON.parse(fs.readFileSync(sourcesPath, 'utf-8'));
+            }
+            console.log(`现有书源: ${existingSources.length} 个`);
+            
+            // 获取新书源ID列表
+            const sourceIds = await getSourceList();
+            
+            // 获取所有新书源
+            const allNewSources = [];
+            for (const id of sourceIds.slice(0, 20)) { // 只取前20个
+              console.log(`获取书源 ${id}...`);
+              const sources = await getSourceJson(id);
+              allNewSources.push(...sources);
+              await new Promise(r => setTimeout(r, 500)); // 延迟避免请求过快
+            }
+            
+            console.log(`获取到 ${allNewSources.length} 个书源`);
+            
+            // 合并书源
+            const sourceMap = new Map();
+            
+            // 添加现有书源
+            for (const s of existingSources) {
+              if (s.bookSourceUrl) {
+                sourceMap.set(s.bookSourceUrl, s);
+              }
+            }
+            
+            // 添加新书源
+            let newCount = 0;
+            for (const s of allNewSources) {
+              if (s.bookSourceName && s.bookSourceUrl) {
+                if (!sourceMap.has(s.bookSourceUrl)) {
+                  s.enabled = true;
+                  sourceMap.set(s.bookSourceUrl, s);
+                  newCount++;
+                }
+              }
+            }
+            
+            console.log(`新增 ${newCount} 个书源`);
+            
+            // 去重并测试
+            const finalSources = [];
+            const testedUrls = new Set();
+            
+            for (const s of sourceMap.values()) {
+              // 去重检查
+              if (testedUrls.has(s.bookSourceUrl)) continue;
+              testedUrls.add(s.bookSourceUrl);
+              
+              // 基本验证
+              if (!s.bookSourceName || !s.bookSourceUrl) continue;
+              if (!s.searchUrl && !s.ruleSearch) continue;
+              
+              finalSources.push(s);
+            }
+            
+            console.log(`最终书源: ${finalSources.length} 个`);
+            
+            // 保存
+            fs.writeFileSync(sourcesPath, JSON.stringify(finalSources, null, 2));
+            console.log('书源已保存');
+            
+            // 更新内置书源文件
+            const defaultPath = path.join(__dirname, 'public', 'default_sources.json');
+            fs.writeFileSync(defaultPath, JSON.stringify(finalSources.slice(0, 50), null, 2));
+            console.log('默认书源已保存');
+            
+            // 输出统计
+            console.log('=== 更新完成 ===');
+            console.log(`总书源: ${finalSources.length}`);
+            console.log(`新增: ${newCount}`);
+          }
+          
+          main().catch(console.error);
+          EOF
+      
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --quiet && git diff --staged --quiet || git commit -m "自动更新书源 $(date '+%Y-%m-%d')"
+      
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}

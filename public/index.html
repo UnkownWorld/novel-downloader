@@ -199,13 +199,22 @@
             border-radius: 6px;
             font-size: 0.85rem;
         }
+        
+        .update-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 184, 148, 0.1);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            border: 1px solid rgba(0, 184, 148, 0.2);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📚 小说下载器</h1>
-            <p>Legado书源规则 | 内置书源</p>
+            <p>Legado书源规则 | 每日自动更新书源</p>
         </div>
         
         <div class="tabs">
@@ -225,6 +234,7 @@
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
                 </form>
                 <div class="search-status hidden" id="searchStatus"></div>
+                <div class="update-info" id="updateInfo">正在加载书源...</div>
             </div>
             
             <div class="card hidden" id="resultsCard">
@@ -282,6 +292,7 @@
                 
                 <div class="btn-group" style="margin-top:8px">
                     <button class="btn" onclick="importSources()">📥 导入JSON</button>
+                    <button class="btn btn-secondary" onclick="loadOnlineSources()">🔄 更新书源</button>
                     <div class="file-input-wrapper">
                         <button class="btn btn-secondary">📁 选择文件</button>
                         <input type="file" accept=".json,.txt" onchange="importFromFile(event)">
@@ -312,134 +323,13 @@
         </div>
         
         <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:12px;font-size:0.75rem">
-            内置书源 | 书源来源于网络仅供学习
+            每日自动更新书源 | 书源来源于网络仅供学习
         </div>
     </div>
     
     <div class="toast" id="toast"></div>
     
     <script>
-        // ========== 内置书源 ==========
-        const DEFAULT_SOURCES = [
-            {
-                "bookSourceName": "笔趣阁",
-                "bookSourceUrl": "https://www.biquge.com",
-                "searchUrl": "/search.php?keyword={{key}}",
-                "enabled": true,
-                "ruleSearch": {
-                    "bookList": ".result-list .result-item",
-                    "name": ".result-game-item-title a",
-                    "author": ".result-game-item-info-tag:eq(0) span",
-                    "bookUrl": ".result-game-item-title a@href"
-                },
-                "ruleBookInfo": {
-                    "name": "#info h1",
-                    "author": "#info p:eq(0)",
-                    "intro": "#intro p"
-                },
-                "ruleToc": {
-                    "chapterList": "#list dl dd a",
-                    "chapterName": "text",
-                    "chapterUrl": "href"
-                },
-                "ruleContent": {
-                    "content": "#content"
-                }
-            },
-            {
-                "bookSourceName": "全本同人",
-                "bookSourceUrl": "https://www.qbtr.cc/",
-                "enabled": true,
-                "ruleSearch": {
-                    "bookList": "class.bk",
-                    "name": "h3@text",
-                    "author": "class.booknews@textNodes",
-                    "bookUrl": "a@href"
-                },
-                "ruleBookInfo": {
-                    "intro": "class.desc@textNodes"
-                },
-                "ruleToc": {
-                    "chapterList": "class.clearfix@li@a",
-                    "chapterName": "text",
-                    "chapterUrl": "href"
-                },
-                "ruleContent": {
-                    "content": "class.read_chapterDetail@p@textNodes"
-                }
-            },
-            {
-                "bookSourceName": "同人小说",
-                "bookSourceUrl": "http://m.trxs.cc",
-                "enabled": true,
-                "ruleSearch": {
-                    "bookList": "class.bk",
-                    "name": "h3.0@text",
-                    "author": "class.booknews@textNodes",
-                    "bookUrl": "a.0@href"
-                },
-                "ruleBookInfo": {
-                    "author": "class.date@tag.a@text",
-                    "name": "class.infos@text"
-                },
-                "ruleToc": {
-                    "chapterList": "class.book_list@li",
-                    "chapterName": "li@text",
-                    "chapterUrl": "li@tag.a@href"
-                },
-                "ruleContent": {
-                    "content": "class.read_chapterDetail@tag.p@text"
-                }
-            },
-            {
-                "bookSourceName": "小说520",
-                "bookSourceUrl": "https://www.xs520.com/",
-                "enabled": true,
-                "ruleSearch": {
-                    "bookList": ".box@.col-md-6",
-                    "name": "h3@text##[\\[\\u4e00-\\u9fa5]+\\]",
-                    "author": ".book_other.0@text",
-                    "bookUrl": "a@href"
-                },
-                "ruleBookInfo": {
-                    "author": ".info@li.0@a@text",
-                    "name": ".info@h1@text",
-                    "intro": "id.intro_pc@text##简介："
-                },
-                "ruleToc": {
-                    "chapterList": ".book_list2@li",
-                    "chapterName": "a@text",
-                    "chapterUrl": "a@href"
-                },
-                "ruleContent": {
-                    "content": ".font_max@text##第\\([1-3]+/3\\)页"
-                }
-            },
-            {
-                "bookSourceName": "梦想家文学",
-                "bookSourceUrl": "http://www.mxjtedu.com/",
-                "enabled": true,
-                "ruleSearch": {
-                    "bookList": "class.txt-list-row5@li:not(:first-child)",
-                    "name": "class.s2@text",
-                    "author": "class.s4@text",
-                    "bookUrl": "class.s2@a@href"
-                },
-                "ruleBookInfo": {
-                    "author": "class.fix@p.0@text##作者：",
-                    "name": "class.layout-tit.1@text##最新章节"
-                },
-                "ruleToc": {
-                    "chapterList": "class.section-box.1@li",
-                    "chapterName": "a@text",
-                    "chapterUrl": "a@href"
-                },
-                "ruleContent": {
-                    "content": ".content@textNodes"
-                }
-            }
-        ];
-        
         // ========== 简单存储 ==========
         const Storage = {
             get(key, def = null) {
@@ -462,13 +352,13 @@
             }
         };
         
-        // ========== 简单缓存 ==========
+        // ========== 内存缓存 ==========
         const Cache = {
             data: {},
             get(key) {
                 const item = this.data[key];
                 if (!item) return null;
-                if (Date.now() - item.t > 3600000) { // 1小时过期
+                if (Date.now() - item.t > 3600000) {
                     delete this.data[key];
                     return null;
                 }
@@ -850,7 +740,6 @@
         
         // ========== HTTP请求 ==========
         async function fetchHtml(url) {
-            // 检查内存缓存
             const cached = Cache.get(url);
             if (cached) return { content: cached, success: true, url, fromCache: true };
             
@@ -865,7 +754,6 @@
                     const data = await response.json();
                     if (data.contents || data) {
                         const content = data.contents || (typeof data === 'string' ? data : JSON.stringify(data));
-                        // 存入内存缓存（不存localStorage避免超限）
                         Cache.set(url, content);
                         return { content, success: true, url, fromCache: false };
                     }
@@ -883,25 +771,97 @@
         let chapters = [];
         let downloadedContent = '';
         let downloadHistory = [];
+        let lastUpdateTime = null;
         
         // 初始化
-        function init() {
-            // 加载书源（优先使用存储的，否则使用默认）
-            const savedSources = Storage.get('bookSources');
-            if (savedSources && savedSources.length > 0) {
-                bookSources = savedSources;
-            } else {
-                bookSources = [...DEFAULT_SOURCES];
-                Storage.set('bookSources', bookSources);
-            }
-            
+        async function init() {
             // 加载历史
             downloadHistory = Storage.get('downloadHistory', []);
+            
+            // 尝试从服务器加载书源
+            await loadOnlineSources();
+            
+            renderHistory();
+        }
+        
+        // 从服务器加载书源
+        async function loadOnlineSources() {
+            const updateInfo = document.getElementById('updateInfo');
+            updateInfo.textContent = '正在加载书源...';
+            
+            try {
+                // 尝试加载在线书源
+                const result = await fetchHtml(window.location.origin + '/sources.json');
+                
+                if (result.success) {
+                    const onlineSources = JSON.parse(result.content);
+                    if (Array.isArray(onlineSources) && onlineSources.length > 0) {
+                        bookSources = onlineSources;
+                        Storage.set('bookSources', bookSources);
+                        Storage.set('lastUpdate', Date.now());
+                        lastUpdateTime = Date.now();
+                        
+                        updateSourceCount();
+                        updateSourceSelect();
+                        renderSourceList();
+                        
+                        updateInfo.textContent = `已加载 ${bookSources.length} 个书源 (在线更新)`;
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.log('在线书源加载失败，使用本地缓存');
+            }
+            
+            // 使用本地缓存
+            const savedSources = Storage.get('bookSources');
+            const savedTime = Storage.get('lastUpdate');
+            
+            if (savedSources && savedSources.length > 0) {
+                bookSources = savedSources;
+                lastUpdateTime = savedTime;
+            } else {
+                // 使用默认书源
+                bookSources = getDefaultSources();
+                Storage.set('bookSources', bookSources);
+            }
             
             updateSourceCount();
             updateSourceSelect();
             renderSourceList();
-            renderHistory();
+            
+            const timeStr = lastUpdateTime ? new Date(lastUpdateTime).toLocaleString() : '未知';
+            updateInfo.textContent = `已加载 ${bookSources.length} 个书源 (更新时间: ${timeStr})`;
+        }
+        
+        // 默认书源
+        function getDefaultSources() {
+            return [
+                {
+                    "bookSourceName": "笔趣阁",
+                    "bookSourceUrl": "https://www.biquge.com",
+                    "searchUrl": "/search.php?keyword={{key}}",
+                    "enabled": true,
+                    "ruleSearch": {
+                        "bookList": ".result-list .result-item",
+                        "name": ".result-game-item-title a",
+                        "author": ".result-game-item-info-tag:eq(0) span",
+                        "bookUrl": ".result-game-item-title a@href"
+                    },
+                    "ruleBookInfo": { "name": "#info h1", "author": "#info p:eq(0)", "intro": "#intro p" },
+                    "ruleToc": { "chapterList": "#list dl dd a", "chapterName": "text", "chapterUrl": "href" },
+                    "ruleContent": { "content": "#content" }
+                },
+                {
+                    "bookSourceName": "全本同人",
+                    "bookSourceUrl": "https://www.qbtr.cc/",
+                    "enabled": true,
+                    "ruleSearch": { "bookList": "class.bk", "name": "h3@text", "author": "class.booknews@textNodes", "bookUrl": "a@href" },
+                    "ruleBookInfo": { "intro": "class.desc@textNodes" },
+                    "ruleToc": { "chapterList": "class.clearfix@li@a", "chapterName": "text", "chapterUrl": "href" },
+                    "ruleContent": { "content": "class.read_chapterDetail@p@textNodes" }
+                }
+            ];
         }
         
         function updateSourceCount() {
@@ -1032,7 +992,7 @@
         
         function clearSources() {
             if (confirm('确定要清空所有书源吗？')) {
-                bookSources = [...DEFAULT_SOURCES];
+                bookSources = getDefaultSources();
                 Storage.set('bookSources', bookSources);
                 updateSourceCount();
                 updateSourceSelect();
@@ -1065,12 +1025,10 @@
                 `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`
             ).join('');
             
-            // 并发搜索
             const searchPromises = sourcesToSearch.map(source => searchSource(source, keyword));
             const allResults = await Promise.all(searchPromises);
             searchResults = allResults.flat();
             
-            // 去重
             const seen = new Set();
             searchResults = searchResults.filter(book => {
                 const key = `${book.name}-${book.author}`;
@@ -1248,17 +1206,11 @@
         }
         
         function selectAllChapters() {
-            chapters.forEach((ch, i) => {
-                ch.selected = true;
-                document.getElementById('ch' + i).checked = true;
-            });
+            chapters.forEach((ch, i) => { ch.selected = true; document.getElementById('ch' + i).checked = true; });
         }
         
         function deselectAllChapters() {
-            chapters.forEach((ch, i) => {
-                ch.selected = false;
-                document.getElementById('ch' + i).checked = false;
-            });
+            chapters.forEach((ch, i) => { ch.selected = false; document.getElementById('ch' + i).checked = false; });
         }
         
         // ========== 下载 ==========
@@ -1360,7 +1312,7 @@
                 name: selectedBook.name,
                 author: selectedBook.author,
                 source: selectedBook.sourceName,
-                content: downloadedContent.substring(0, 100000), // 限制大小
+                content: downloadedContent.substring(0, 100000),
                 date: new Date().toLocaleString(),
                 size: (downloadedContent.length / 1024).toFixed(1) + ' KB'
             };

@@ -1,0 +1,119 @@
+[
+    {
+        "bookSourceName": "笔趣阁",
+        "bookSourceUrl": "https://www.biquge.com",
+        "searchUrl": "/search.php?keyword={{key}}",
+        "enabled": true,
+        "ruleSearch": {
+            "bookList": ".result-list .result-item",
+            "name": ".result-game-item-title a",
+            "author": ".result-game-item-info-tag:eq(0) span",
+            "bookUrl": ".result-game-item-title a@href"
+        },
+        "ruleBookInfo": {
+            "name": "#info h1",
+            "author": "#info p:eq(0)",
+            "intro": "#intro p"
+        },
+        "ruleToc": {
+            "chapterList": "#list dl dd a",
+            "chapterName": "text",
+            "chapterUrl": "href"
+        },
+        "ruleContent": {
+            "content": "#content"
+        }
+    },
+    {
+        "bookSourceName": "全本同人",
+        "bookSourceUrl": "https://www.qbtr.cc/",
+        "enabled": true,
+        "ruleSearch": {
+            "bookList": "class.bk",
+            "name": "h3@text",
+            "author": "class.booknews@textNodes",
+            "bookUrl": "a@href"
+        },
+        "ruleBookInfo": {
+            "intro": "class.desc@textNodes"
+        },
+        "ruleToc": {
+            "chapterList": "class.clearfix@li@a",
+            "chapterName": "text",
+            "chapterUrl": "href"
+        },
+        "ruleContent": {
+            "content": "class.read_chapterDetail@p@textNodes"
+        }
+    },
+    {
+        "bookSourceName": "同人小说",
+        "bookSourceUrl": "http://m.trxs.cc",
+        "enabled": true,
+        "ruleSearch": {
+            "bookList": "class.bk",
+            "name": "h3.0@text",
+            "author": "class.booknews@textNodes",
+            "bookUrl": "a.0@href"
+        },
+        "ruleBookInfo": {
+            "author": "class.date@tag.a@text",
+            "name": "class.infos@text"
+        },
+        "ruleToc": {
+            "chapterList": "class.book_list@li",
+            "chapterName": "li@text",
+            "chapterUrl": "li@tag.a@href"
+        },
+        "ruleContent": {
+            "content": "class.read_chapterDetail@tag.p@text"
+        }
+    },
+    {
+        "bookSourceName": "小说520",
+        "bookSourceUrl": "https://www.xs520.com/",
+        "enabled": true,
+        "ruleSearch": {
+            "bookList": ".box@.col-md-6",
+            "name": "h3@text##[\\[\\u4e00-\\u9fa5]+\\]",
+            "author": ".book_other.0@text",
+            "bookUrl": "a@href"
+        },
+        "ruleBookInfo": {
+            "author": ".info@li.0@a@text",
+            "name": ".info@h1@text",
+            "intro": "id.intro_pc@text##简介："
+        },
+        "ruleToc": {
+            "chapterList": ".book_list2@li",
+            "chapterName": "a@text",
+            "chapterUrl": "a@href"
+        },
+        "ruleContent": {
+            "content": ".font_max@text##第\\([1-3]+/3\\)页"
+        }
+    },
+    {
+        "bookSourceName": "梦想家文学",
+        "bookSourceUrl": "http://www.mxjtedu.com/",
+        "enabled": true,
+        "ruleSearch": {
+            "bookList": "class.txt-list-row5@li:not(:first-child)",
+            "name": "class.s2@text",
+            "author": "class.s4@text",
+            "bookUrl": "class.s2@a@href"
+        },
+        "ruleBookInfo": {
+            "author": "class.fix@p.0@text##作者：",
+            "name": "class.layout-tit.1@text##最新章节"
+        },
+        "ruleToc": {
+            "chapterList": "class.section-box.1@li",
+            "chapterName": "a@text",
+            "chapterUrl": "a@href"
+        },
+        "ruleContent": {
+            "content": ".content@textNodes"
+        }
+    }
+]
