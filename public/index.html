@@ -231,8 +231,16 @@
                     <select id="sourceSelect" style="min-width:120px">
                         <option value="">全部书源</option>
                     </select>
+                    <select id="searchMode" style="min-width:100px">
+                        <option value="fast">快速模式</option>
+                        <option value="full">完整搜索</option>
+                    </select>
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
+                    <button type="button" class="btn btn-secondary hidden" id="stopSearchBtn">停止</button>
                 </form>
+                <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:4px">
+                    快速模式: 找到结果即显示 | 完整搜索: 搜索所有书源
+                </div>
                 <div class="search-status hidden" id="searchStatus"></div>
                 <div class="update-info" id="updateInfo">正在加载书源...</div>
             </div>
@@ -1285,8 +1293,14 @@
         
         // ========== 搜索 ==========
         
+        let searchAborted = false;
+        let foundResults = [];
+        
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            if (searchAborted === 'searching') return; // 防止重复搜索
+            
             const keyword = document.getElementById('searchInput').value.trim();
             if (!keyword) {
                 showToast('请输入搜索关键词', true);
@@ -1305,64 +1319,164 @@
                 return; 
             }
             
+            // 初始化搜索状态
+            searchAborted = 'searching';
+            foundResults = [];
+            searchResults = [];
+            
             const btn = document.getElementById('searchBtn');
+            const stopBtn = document.getElementById('stopSearchBtn');
             btn.disabled = true;
             btn.textContent = '搜索中...';
-            searchResults = [];
+            stopBtn.classList.remove('hidden');
             
             // 显示搜索状态区域
             const resultsCard = document.getElementById('resultsCard');
             resultsCard.classList.remove('hidden');
-            document.getElementById('bookList').innerHTML = '<div class="loading">正在搜索中，请稍候...</div>';
+            document.getElementById('bookList').innerHTML = '<div class="loading">正在初始化搜索...</div>';
             
             const sourceIdx = document.getElementById('sourceSelect').value;
             const sourcesToSearch = sourceIdx !== '' ? [enabledSources[parseInt(sourceIdx)]] : enabledSources;
+            const searchMode = document.getElementById('searchMode').value;
             
             const statusDiv = document.getElementById('searchStatus');
             statusDiv.classList.remove('hidden');
             statusDiv.innerHTML = `
                 <div style="margin-bottom:8px;color:rgba(255,255,255,0.7)">
-                    正在搜索 ${sourcesToSearch.length} 个书源...
+                    <span id="searchProgress">正在搜索 0/${sourcesToSearch.length} 个书源...</span>
+                    <span id="foundCount" style="color:#00b894;margin-left:10px">已找到: 0</span>
                 </div>
-                ${sourcesToSearch.slice(0, 10).map(s => 
-                    `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`
-                ).join('')}
-                ${sourcesToSearch.length > 10 ? `<div style="color:rgba(255,255,255,0.5);font-size:0.75rem">还有 ${sourcesToSearch.length - 10} 个书源...</div>` : ''}
+                <div id="sourceStatusList"></div>
             `;
             
-            try {
-                // 设置总超时
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('搜索超时')), 60000)
-                );
-                
-                const searchPromise = Promise.all(sourcesToSearch.map(source => searchSource(source, keyword)));
-                
-                const allResults = await Promise.race([searchPromise, timeoutPromise]);
-                searchResults = allResults.flat();
-                
-                const seen = new Set();
-                searchResults = searchResults.filter(book => {
-                    const key = `${book.name}-${book.author}`;
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                });
-                
-                if (searchResults.length > 0) {
-                    displayResults(searchResults.slice(0, 50));
-                    showToast(`找到 ${searchResults.length} 个结果`);
-                } else {
-                    document.getElementById('bookList').innerHTML = '<div class="loading">未找到相关结果，请尝试其他关键词</div>';
-                    showToast('未找到结果', true);
+            const startTime = Date.now();
+            let completedCount = 0;
+            
+            // 实时显示结果的函数
+            const updateResults = () => {
+                if (foundResults.length > 0) {
+                    // 去重
+                    const seen = new Set();
+                    const uniqueResults = foundResults.filter(book => {
+                        const key = `${book.name}-${book.author}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+                    
+                    // 实时显示结果
+                    const bookList = document.getElementById('bookList');
+                    bookList.innerHTML = uniqueResults.slice(0, 50).map((book, i) => `
+                        <div class="book-item" onclick="selectBook(${i})">
+                            <h3>《${book.name}》</h3>
+                            <div class="meta">${book.author ? '作者: ' + book.author + ' | ' : ''}来源: ${book.sourceName}</div>
+                            ${book.intro ? `<div class="intro">${book.intro}</div>` : ''}
+                        </div>
+                    `).join('');
+                    
+                    document.getElementById('foundCount').textContent = `已找到: ${uniqueResults.length}`;
+                    searchResults = uniqueResults;
                 }
+            };
+            
+            try {
+                // 使用逐个搜索，支持实时显示和提前停止
+                const searchPromises = [];
+                
+                for (let i = 0; i < sourcesToSearch.length; i++) {
+                    if (searchAborted === 'stop') {
+                        break;
+                    }
+                    
+                    const source = sourcesToSearch[i];
+                    const statusId = `status-${source.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    
+                    // 更新状态列表（只显示最近的10个）
+                    const statusList = document.getElementById('sourceStatusList');
+                    const existingStatus = document.getElementById(statusId);
+                    if (!existingStatus) {
+                        const statusHtml = `<div class="source-status loading" id="${statusId}">${source.bookSourceName}: 搜索中...</div>`;
+                        statusList.innerHTML = statusHtml + statusList.innerHTML;
+                        // 保持最多15个状态显示
+                        const statuses = statusList.querySelectorAll('.source-status');
+                        if (statuses.length > 15) {
+                            statuses[statuses.length - 1].remove();
+                        }
+                    }
+                    
+                    // 异步搜索每个书源
+                    const promise = searchSource(source, keyword).then(results => {
+                        completedCount++;
+                        document.getElementById('searchProgress').textContent = 
+                            `正在搜索 ${completedCount}/${sourcesToSearch.length} 个书源...`;
+                        
+                        if (results && results.length > 0) {
+                            foundResults.push(...results);
+                            updateResults();
+                            
+                            // 快速模式：找到结果后可以提前结束
+                            if (searchMode === 'fast' && foundResults.length >= 3) {
+                                // 找到足够结果，标记为可以停止
+                                return results;
+                            }
+                        }
+                        return results;
+                    });
+                    
+                    searchPromises.push(promise);
+                    
+                    // 快速模式：并发搜索前5个，找到结果就停止后续
+                    if (searchMode === 'fast') {
+                        // 每批并发5个
+                        if ((i + 1) % 5 === 0 || i === sourcesToSearch.length - 1) {
+                            await Promise.all(searchPromises.slice(-5));
+                            if (foundResults.length >= 3 && searchAborted !== 'stop') {
+                                // 找到足够结果，等待当前批次完成后停止
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 等待所有搜索完成（完整模式）
+                if (searchMode === 'full' && searchAborted !== 'stop') {
+                    await Promise.all(searchPromises);
+                }
+                
             } catch (err) {
-                document.getElementById('bookList').innerHTML = `<div class="loading" style="color:#e94560">搜索出错: ${err.message}</div>`;
-                showToast('搜索出错: ' + err.message, true);
+                console.error('搜索出错:', err);
+            }
+            
+            // 搜索完成
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            
+            if (searchAborted === 'stop') {
+                document.getElementById('searchProgress').textContent = 
+                    `已停止搜索 (耗时 ${elapsed}秒)`;
+            } else {
+                document.getElementById('searchProgress').textContent = 
+                    `搜索完成 (耗时 ${elapsed}秒)`;
+            }
+            
+            if (searchResults.length > 0) {
+                showToast(`找到 ${searchResults.length} 个结果`);
+            } else {
+                document.getElementById('bookList').innerHTML = 
+                    '<div class="loading">未找到相关结果，请尝试其他关键词或切换搜索模式</div>';
+                showToast('未找到结果', true);
             }
             
             btn.disabled = false;
             btn.textContent = '搜索';
+            stopBtn.classList.add('hidden');
+            searchAborted = false;
+        });
+        
+        // 停止搜索
+        document.getElementById('stopSearchBtn').addEventListener('click', () => {
+            searchAborted = 'stop';
+            document.getElementById('searchProgress').textContent = '正在停止搜索...';
+            showToast('正在停止搜索...');
         });
         
         async function searchSource(source, keyword) {
