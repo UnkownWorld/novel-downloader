@@ -1,6 +1,5 @@
 /**
- * 主应用模块 - 完整版
- * 包含发现页面和书架功能
+ * 主应用模块 - 带调试功能
  */
 
 class App {
@@ -20,10 +19,13 @@ class App {
         this.isDownloading = false;
         this.downloadAborted = false;
         
-        // 发现页面状态
         this.currentExploreSource = null;
         this.exploreResults = [];
         this.explorePage = 1;
+        
+        // 调试模式
+        this.debugMode = false;
+        this.lastSearchResults = [];
         
         this.config = {
             searchConcurrent: 10,
@@ -73,6 +75,15 @@ class App {
         if (importInput) {
             importInput.addEventListener('change', (e) => this.handleImportFile(e));
         }
+        
+        // 调试模式开关
+        const debugCheckbox = document.getElementById('debugMode');
+        if (debugCheckbox) {
+            debugCheckbox.addEventListener('change', (e) => {
+                this.debugMode = e.target.checked;
+                this.showToast(this.debugMode ? '调试模式已开启' : '调试模式已关闭');
+            });
+        }
     }
     
     switchTab(tab) {
@@ -108,10 +119,6 @@ class App {
         if (this.config.skipInvalidSource) {
             const beforeCount = sources.length;
             sources = sources.filter(s => !this.invalidSourceManager.isInvalid(s.bookSourceUrl));
-            const skipped = beforeCount - sources.length;
-            if (skipped > 0) {
-                console.log(`跳过 ${skipped} 个失效书源`);
-            }
         }
         
         if (sources.length === 0) {
@@ -125,7 +132,7 @@ class App {
         searchBtn.disabled = true;
         
         const resultsDiv = document.getElementById('searchResults');
-        resultsDiv.innerHTML = `<div class="loading">正在搜索... (使用 ${sources.length} 个书源)</div>`;
+        resultsDiv.innerHTML = `<div class="loading">正在搜索 "${keyword}"... (使用 ${sources.length} 个书源)</div>`;
         
         try {
             const response = await this.fetchWithRetry('/api/search', {
@@ -134,7 +141,8 @@ class App {
                 body: JSON.stringify({
                     keyword: keyword,
                     sources: sources.slice(0, this.config.searchConcurrent),
-                    page: 1
+                    page: 1,
+                    debug: this.debugMode
                 })
             });
             
@@ -144,10 +152,27 @@ class App {
                 throw new Error(data.error || '搜索失败');
             }
             
+            // 保存原始结果用于调试
+            this.lastSearchResults = data.results;
+            
             const allBooks = [];
+            const sourceStats = {
+                total: data.results.length,
+                success: 0,
+                failed: 0,
+                filtered: 0,
+                noResults: 0
+            };
             
             for (const result of data.results) {
                 if (result.success && result.html) {
+                    // 检查是否被过滤
+                    if (result.isFiltered) {
+                        sourceStats.filtered++;
+                        console.log(`[${result.sourceName}] 可能被过滤: ${result.filterReason}`);
+                        continue;
+                    }
+                    
                     const books = HtmlParser.parseSearchResult(
                         result.html, 
                         result.ruleSearch, 
@@ -157,16 +182,32 @@ class App {
                     
                     if (books.length > 0) {
                         allBooks.push(...books);
+                        sourceStats.success++;
                         this.invalidSourceManager.remove(result.source);
+                    } else {
+                        sourceStats.noResults++;
+                        // 调试模式下显示详细信息
+                        if (this.debugMode) {
+                            console.log(`[${result.sourceName}] 无结果, HTML长度: ${result.htmlLength}`);
+                        }
                     }
                 } else {
+                    sourceStats.failed++;
                     this.invalidSourceManager.add(result.source, result.error);
                 }
             }
             
             this.searchResults = this.mergeResults(allBooks, keyword);
-            this.renderSearchResults(this.searchResults);
-            this.showToast(`找到 ${this.searchResults.length} 个结果`);
+            
+            // 显示结果和统计
+            this.renderSearchResults(this.searchResults, sourceStats, keyword);
+            
+            if (this.searchResults.length > 0) {
+                this.showToast(`找到 ${this.searchResults.length} 个结果`);
+            } else {
+                this.showToast(`没有找到结果，尝试其他关键词或书源`, true);
+            }
+            
             this.renderInvalidSources();
             
         } catch (e) {
@@ -237,15 +278,42 @@ class App {
         });
     }
     
-    renderSearchResults(results) {
+    renderSearchResults(results, stats = null, keyword = '') {
         const resultsDiv = document.getElementById('searchResults');
         
-        if (results.length === 0) {
-            resultsDiv.innerHTML = '<div class="empty">没有找到结果</div>';
-            return;
+        let html = '';
+        
+        // 显示统计信息
+        if (stats) {
+            html += `
+                <div class="search-stats">
+                    <span>📚 找到 <strong>${results.length}</strong> 个结果</span>
+                    <span class="stats-detail">
+                        成功: ${stats.success} | 
+                        无结果: ${stats.noResults} | 
+                        被过滤: ${stats.filtered} | 
+                        失败: ${stats.failed}
+                    </span>
+                    ${this.debugMode ? `<button class="btn btn-small btn-secondary" onclick="app.showDebugInfo()">查看调试信息</button>` : ''}
+                </div>
+            `;
         }
         
-        let html = '';
+        if (results.length === 0) {
+            html += `
+                <div class="empty">
+                    <p>没有找到 "${keyword}" 相关的小说</p>
+                    <p class="hint">可能原因：</p>
+                    <ul>
+                        <li>关键词被网站过滤</li>
+                        <li>书源规则不匹配</li>
+                        <li>尝试使用其他关键词</li>
+                    </ul>
+                </div>
+            `;
+            resultsDiv.innerHTML = html;
+            return;
+        }
         
         for (const book of results) {
             const sources = book.originNames || [book.originName];
@@ -269,6 +337,41 @@ class App {
         }
         
         resultsDiv.innerHTML = html;
+    }
+    
+    /**
+     * 显示调试信息
+     */
+    showDebugInfo() {
+        if (!this.lastSearchResults || this.lastSearchResults.length === 0) {
+            this.showToast('没有调试信息', true);
+            return;
+        }
+        
+        const modal = document.getElementById('bookModal');
+        const modalContent = document.getElementById('bookModalContent');
+        modal.classList.add('active');
+        
+        let html = '<div class="debug-info"><h3>调试信息</h3>';
+        
+        for (const result of this.lastSearchResults) {
+            html += `
+                <div class="debug-item">
+                    <h4>${this.escapeHtml(result.sourceName)}</h4>
+                    <div class="debug-detail">
+                        <p>状态: ${result.success ? '✓ 成功' : '✗ 失败'}</p>
+                        <p>请求URL: <code>${this.escapeHtml(result.requestUrl || 'N/A')}</code></p>
+                        <p>响应时间: ${result.responseTime}ms</p>
+                        <p>HTML长度: ${result.htmlLength || result.html?.length || 0}</p>
+                        ${result.isFiltered ? `<p class="warning">⚠️ 可能被过滤: ${result.filterReason}</p>` : ''}
+                        ${result.error ? `<p class="error">错误: ${this.escapeHtml(result.error)}</p>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += '</div>';
+        modalContent.innerHTML = html;
     }
     
     // ==================== 书籍详情 ====================
@@ -399,11 +502,10 @@ class App {
         if (!listDiv) return;
         
         if (books.length === 0) {
-            listDiv.innerHTML = '<div class="empty">书架空空如也</div>';
+            listDiv.innerHTML = '<div class="empty">书架空空如也，去搜索添加吧</div>';
             return;
         }
         
-        // 按更新时间排序
         books.sort((a, b) => (b.updateTime || 0) - (a.updateTime || 0));
         
         let html = '';
@@ -661,7 +763,6 @@ class App {
         this.currentSource = this.sourceManager.getSource(origin);
         this.currentBook = { ...this.currentBook, bookUrl: bookUrl, origin: origin };
         
-        // 更新书架
         if (this.bookshelfManager.hasBook(this.currentBook.bookUrl)) {
             this.bookshelfManager.updateBook(this.currentBook.bookUrl, {
                 bookUrl: bookUrl,
@@ -715,7 +816,6 @@ class App {
                 throw new Error('解析目录失败，没有找到章节');
             }
             
-            // 更新书架信息
             if (this.bookshelfManager.hasBook(this.currentBook.bookUrl)) {
                 this.bookshelfManager.updateBook(this.currentBook.bookUrl, {
                     lastChapter: this.currentChapters[this.currentChapters.length - 1]?.title,
