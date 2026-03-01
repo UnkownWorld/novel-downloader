@@ -472,8 +472,12 @@ class App {
                         `<button class="btn btn-secondary" onclick="app.addToShelf()">加入书架</button>`
                     }
                     <button class="btn btn-secondary" onclick="app.showChangeSource()">换源</button>
+                    <button class="btn btn-secondary" onclick="app.debugChapter()">🔍 调试</button>
                     <button class="btn btn-secondary" onclick="app.closeModal()">关闭</button>
                 </div>
+            </div>
+        `;
+    }
             </div>
         `;
     }
@@ -1734,4 +1738,189 @@ App.prototype.formatContent = function(content) {
     if (!content) return '';
     const paragraphs = content.split(/\n+/).filter(p => p.trim());
     return paragraphs.map(p => `<p>${this.escapeHtml(p.trim())}</p>`).join('');
+};
+
+// ==================== 调试功能 ====================
+
+/**
+ * 调试章节内容
+ */
+App.prototype.debugChapter = async function() {
+    if (!this.currentBook || !this.currentSource) return;
+    
+    const modalContent = document.getElementById('bookModalContent');
+    modalContent.innerHTML = '<div class="loading">加载章节进行调试...</div>';
+    
+    try {
+        // 获取目录
+        const cacheKey = `toc_${this.currentBook.tocUrl || this.currentBook.bookUrl}`;
+        let data = this.cacheManager.get(cacheKey);
+        
+        if (!data) {
+            const response = await this.fetchWithRetry('/api/chapters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    tocUrl: this.currentBook.tocUrl || this.currentBook.bookUrl 
+                })
+            });
+            
+            data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || '获取目录失败');
+            }
+        }
+        
+        this.currentChapters = HtmlParser.parseChapterList(
+            data.html, 
+            this.currentSource.ruleToc, 
+            data.baseUrl
+        );
+        
+        if (this.currentChapters.length === 0) {
+            throw new Error('没有找到章节');
+        }
+        
+        // 调试第一章
+        const chapter = this.currentChapters[0];
+        
+        const response = await fetch('/api/content', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                chapterUrl: chapter.url,
+                debug: true
+            })
+        });
+        
+        const contentData = await response.json();
+        
+        if (!contentData.success) {
+            throw new Error(contentData.error || '获取内容失败');
+        }
+        
+        // 解析内容
+        const parseResult = HtmlParser.parseContent(
+            contentData.html,
+            this.currentSource.ruleContent,
+            contentData.baseUrl
+        );
+        
+        // 显示调试信息
+        this.showDebugChapter(chapter, contentData, parseResult);
+        
+    } catch (e) {
+        console.error('调试失败:', e);
+        modalContent.innerHTML = `<div class="error">调试失败: ${e.message}</div>`;
+    }
+};
+
+/**
+ * 显示调试结果
+ */
+App.prototype.showDebugChapter = function(chapter, contentData, parseResult) {
+    const modalContent = document.getElementById('bookModalContent');
+    
+    let html = `
+        <div class="debug-chapter">
+            <h3>🔍 章节调试</h3>
+            
+            <div class="debug-section">
+                <h4>章节信息</h4>
+                <p>标题: ${this.escapeHtml(chapter.title)}</p>
+                <p>URL: <code>${this.escapeHtml(chapter.url)}</code></p>
+            </div>
+            
+            <div class="debug-section">
+                <h4>请求信息</h4>
+                <p>HTML长度: ${contentData.contentLength} 字符</p>
+                <p>实际URL: <code>${this.escapeHtml(contentData.baseUrl)}</code></p>
+            </div>
+            
+            <div class="debug-section">
+                <h4>解析规则</h4>
+                <p>内容选择器: <code>${this.escapeHtml(this.currentSource.ruleContent?.content || '未设置')}</code></p>
+            </div>
+            
+            <div class="debug-section">
+                <h4>解析结果</h4>
+                <p>状态: ${parseResult.success ? '<span class="success">✓ 成功</span>' : '<span class="error">✗ 失败</span>'}</p>
+                ${parseResult.error ? `<p class="error">错误: ${this.escapeHtml(parseResult.error)}</p>` : ''}
+                <p>内容长度: ${parseResult.content?.length || 0} 字符</p>
+                ${parseResult.debug ? `
+                    <p>选择器: <code>${this.escapeHtml(parseResult.debug.selector || 'N/A')}</code></p>
+                    <p>找到元素: ${parseResult.debug.found ? '是' : '否'}</p>
+                    <p>原始长度: ${parseResult.debug.rawLength || 0} 字符</p>
+                ` : ''}
+            </div>
+            
+            <div class="debug-section">
+                <h4>解析出的内容 (前500字)</h4>
+                <div class="debug-content">
+                    ${this.escapeHtml(parseResult.content?.substring(0, 500) || '(空)')}
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h4>原始HTML (前1000字)</h4>
+                <div class="debug-html">
+                    ${this.escapeHtml(contentData.html?.substring(0, 1000) || '(空)')}
+                </div>
+            </div>
+            
+            <div class="debug-actions">
+                <button class="btn btn-secondary" onclick="app.showBookDetail(app.currentBook)">返回</button>
+                <button class="btn btn-primary" onclick="app.copyDebugInfo()">复制调试信息</button>
+            </div>
+        </div>
+    `;
+    
+    modalContent.innerHTML = html;
+    
+    // 保存调试数据
+    this.lastDebugData = {
+        chapter: chapter,
+        contentData: contentData,
+        parseResult: parseResult,
+        rule: this.currentSource.ruleContent
+    };
+};
+
+/**
+ * 复制调试信息
+ */
+App.prototype.copyDebugInfo = function() {
+    if (!this.lastDebugData) return;
+    
+    const d = this.lastDebugData;
+    const info = `
+章节调试信息
+=============
+
+章节: ${d.chapter.title}
+URL: ${d.chapter.url}
+
+规则: ${JSON.stringify(d.rule, null, 2)}
+
+解析结果:
+- 成功: ${d.parseResult.success}
+- 错误: ${d.parseResult.error || '无'}
+- 内容长度: ${d.parseResult.content?.length || 0}
+
+调试信息:
+${JSON.stringify(d.parseResult.debug, null, 2)}
+
+内容预览 (前500字):
+${d.parseResult.content?.substring(0, 500) || '(空)'}
+
+HTML预览 (前1000字):
+${d.contentData.html?.substring(0, 1000) || '(空)'}
+`.trim();
+    
+    navigator.clipboard.writeText(info).then(() => {
+        this.showToast('已复制到剪贴板');
+    }).catch(() => {
+        this.showToast('复制失败', true);
+    });
 };
