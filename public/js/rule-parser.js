@@ -1,203 +1,332 @@
 /**
- * 规则解析器 - 参考Legado实现
- * 支持: CSS选择器, XPath, JSONPath, JS规则, 正则表达式
+ * 规则解析器 - 完整实现Legado规则语法
+ * 
+ * 支持的规则类型:
+ * - CSS选择器: .class, #id, tag
+ * - XPath: /html/body/div (需要浏览器支持)
+ * - JSONPath: $.data.list
+ * - JS规则: <js>...</js> 或 @js:...
+ * - 正则表达式: :regex
+ * 
+ * 支持的操作符:
+ * - @ 属性选择器: a@href, img@src, .text@text
+ * - . 索引选择器: .0, .1
+ * - ## 替换规则: rule##regex##replacement
+ * - || 或规则: rule1||rule2 (任一成功)
+ * - && 且规则: rule1&&rule2 (都要执行)
+ * - %% 并行规则: rule1%%rule2 (交替组合)
  */
 
 class RuleParser {
-    constructor(debug = false) {
-        this.debug = debug;
-        this.variables = {};  // 变量存储
+    constructor(options = {}) {
+        this.debug = options.debug || false;
+        this.variables = {};
+        this.baseUrl = '';
     }
 
     /**
-     * 解析规则字符串，返回结果
-     * @param {string} ruleStr - 规则字符串
-     * @param {Element|Document} context - 上下文元素
-     * @param {string} baseUrl - 基础URL
-     * @returns {string}
+     * 解析规则获取字符串
      */
-    parse(ruleStr, context, baseUrl = '') {
+    getString(context, ruleStr, baseUrl = '') {
         if (!ruleStr) return '';
+        this.baseUrl = baseUrl;
         
         try {
-            // 分解规则链
-            const rules = this.splitRuleChain(ruleStr);
-            let result = context;
-            
-            for (const rule of rules) {
-                if (!result) break;
-                result = this.executeRule(rule, result, baseUrl);
+            // 处理||分隔符（或规则）
+            if (this.containsOperator(ruleStr, '||')) {
+                const rules = this.splitByOperator(ruleStr, '||');
+                for (const rule of rules) {
+                    const result = this.getString(context, rule.trim(), baseUrl);
+                    if (result) return result;
+                }
+                return '';
             }
             
-            return this.toString(result);
+            // 处理&&分隔符（且规则）
+            if (this.containsOperator(ruleStr, '&&')) {
+                const rules = this.splitByOperator(ruleStr, '&&');
+                const results = [];
+                for (const rule of rules) {
+                    const result = this.getString(context, rule.trim(), baseUrl);
+                    if (result) results.push(result);
+                }
+                return results.join('\n');
+            }
+            
+            // 处理%%分隔符（并行规则）
+            if (this.containsOperator(ruleStr, '%%')) {
+                const rules = this.splitByOperator(ruleStr, '%%');
+                const results = rules.map(rule => this.getString(context, rule.trim(), baseUrl));
+                // 交替组合
+                const maxLen = Math.max(...results.map(r => r.split('\n').length));
+                const combined = [];
+                for (let i = 0; i < maxLen; i++) {
+                    for (const result of results) {
+                        const lines = result.split('\n');
+                        if (i < lines.length && lines[i]) {
+                            combined.push(lines[i]);
+                        }
+                    }
+                }
+                return combined.join('\n');
+            }
+            
+            // 解析单个规则链
+            return this.parseSingleRule(context, ruleStr);
+            
         } catch (e) {
-            console.error('规则解析错误:', e, ruleStr);
+            if (this.debug) console.error('规则解析错误:', e, ruleStr);
             return '';
         }
     }
 
     /**
-     * 解析规则返回元素列表
+     * 解析规则获取元素列表
      */
-    parseElements(ruleStr, context, baseUrl = '') {
+    getElements(context, ruleStr, baseUrl = '') {
         if (!ruleStr) return [];
+        this.baseUrl = baseUrl;
         
         try {
-            const rules = this.splitRuleChain(ruleStr);
-            let result = context;
-            
-            for (const rule of rules) {
-                if (!result) break;
-                result = this.executeRuleForElements(rule, result, baseUrl);
+            // 处理反向
+            let reverse = false;
+            if (ruleStr.startsWith('-')) {
+                reverse = true;
+                ruleStr = ruleStr.substring(1);
             }
             
-            return Array.isArray(result) ? result : [result];
+            // 处理正向标记
+            if (ruleStr.startsWith('+')) {
+                ruleStr = ruleStr.substring(1);
+            }
+            
+            // 获取元素
+            let elements = this.getElementsInternal(context, ruleStr);
+            
+            if (reverse) {
+                elements = elements.reverse();
+            }
+            
+            return elements;
+            
         } catch (e) {
-            console.error('规则解析错误:', e, ruleStr);
+            if (this.debug) console.error('获取元素错误:', e, ruleStr);
             return [];
         }
     }
 
     /**
-     * 分解规则链（按@分隔，但保留@@和@CSS:等）
+     * 解析单个规则链
+     */
+    parseSingleRule(context, ruleStr) {
+        // 分解规则链
+        const rules = this.splitRuleChain(ruleStr);
+        let result = context;
+        
+        for (const rule of rules) {
+            if (!result) break;
+            result = this.executeRule(rule, result);
+        }
+        
+        return this.toString(result);
+    }
+
+    /**
+     * 分解规则链
      */
     splitRuleChain(ruleStr) {
         const rules = [];
-        let current = '';
         let i = 0;
+        let current = '';
         
         while (i < ruleStr.length) {
-            // 检查特殊前缀
+            const char = ruleStr[i];
+            const nextChar = ruleStr[i + 1] || '';
+            
+            // 检查特殊规则前缀
             if (ruleStr.substring(i).startsWith('@CSS:')) {
-                // CSS规则，找到下一个非转义的@
-                const start = i;
-                i += 5;
-                while (i < ruleStr.length && ruleStr[i] !== '@') i++;
-                rules.push({ type: 'css', value: ruleStr.substring(start + 5, i) });
-                i++;
-            } else if (ruleStr.substring(i).startsWith('@XPath:')) {
-                const start = i;
-                i += 7;
-                while (i < ruleStr.length && ruleStr[i] !== '@') i++;
-                rules.push({ type: 'xpath', value: ruleStr.substring(start + 7, i) });
-                i++;
-            } else if (ruleStr.substring(i).startsWith('@Json:')) {
-                const start = i;
-                i += 6;
-                while (i < ruleStr.length && ruleStr[i] !== '@') i++;
-                rules.push({ type: 'json', value: ruleStr.substring(start + 6, i) });
-                i++;
-            } else if (ruleStr.substring(i).startsWith('@@')) {
-                // 强制CSS
-                current += '@@';
-                i += 2;
-            } else if (ruleStr[i] === '@') {
-                // 普通规则分隔
+                // CSS规则
                 if (current) {
-                    rules.push(this.parseSingleRule(current));
+                    rules.push(this.parseRulePart(current));
                     current = '';
                 }
+                let j = i + 5;
+                while (j < ruleStr.length && ruleStr[j] !== '@') j++;
+                rules.push({ type: 'css', value: ruleStr.substring(i + 5, j) });
+                i = j + 1;
+            } else if (ruleStr.substring(i).startsWith('@XPath:')) {
+                if (current) {
+                    rules.push(this.parseRulePart(current));
+                    current = '';
+                }
+                let j = i + 7;
+                while (j < ruleStr.length && ruleStr[j] !== '@') j++;
+                rules.push({ type: 'xpath', value: ruleStr.substring(i + 7, j) });
+                i = j + 1;
+            } else if (ruleStr.substring(i).startsWith('@Json:')) {
+                if (current) {
+                    rules.push(this.parseRulePart(current));
+                    current = '';
+                }
+                let j = i + 6;
+                while (j < ruleStr.length && ruleStr[j] !== '@') j++;
+                rules.push({ type: 'json', value: ruleStr.substring(i + 6, j) });
+                i = j + 1;
+            } else if (ruleStr.substring(i).startsWith('<js>')) {
+                // JS规则
+                if (current) {
+                    rules.push(this.parseRulePart(current));
+                    current = '';
+                }
+                const endIdx = ruleStr.indexOf('</js>', i + 4);
+                if (endIdx > 0) {
+                    rules.push({ type: 'js', value: ruleStr.substring(i + 4, endIdx) });
+                    i = endIdx + 5;
+                } else {
+                    i += 4;
+                }
+            } else if (ruleStr.substring(i).startsWith('@js:')) {
+                if (current) {
+                    rules.push(this.parseRulePart(current));
+                    current = '';
+                }
+                let j = i + 4;
+                // JS代码可能包含@，需要找到规则结束位置
+                let depth = 0;
+                while (j < ruleStr.length) {
+                    if (ruleStr[j] === '(') depth++;
+                    else if (ruleStr[j] === ')') depth--;
+                    else if (ruleStr[j] === '@' && depth === 0 && !ruleStr.substring(j).startsWith('@js:')) {
+                        break;
+                    }
+                    j++;
+                }
+                rules.push({ type: 'js', value: ruleStr.substring(i + 4, j) });
+                i = j + 1;
+            } else if (char === '@' && current) {
+                // 属性分隔符
+                rules.push(this.parseRulePart(current + '@'));
+                current = '';
                 i++;
             } else {
-                current += ruleStr[i];
+                current += char;
                 i++;
             }
         }
         
         if (current) {
-            rules.push(this.parseSingleRule(current));
+            rules.push(this.parseRulePart(current));
         }
         
         return rules;
     }
 
     /**
-     * 解析单个规则
+     * 解析规则部分
      */
-    parseSingleRule(ruleStr) {
-        // 检查是否是JS规则
-        if (ruleStr.startsWith('<js>') || ruleStr.startsWith('@js:')) {
-            return { type: 'js', value: ruleStr.replace(/^<js>|<\/js>$|^@js:/g, '') };
-        }
-        
-        // 检查是否是正则
-        if (ruleStr.startsWith(':')) {
-            return { type: 'regex', value: ruleStr.substring(1) };
-        }
-        
-        // 检查是否是XPath
-        if (ruleStr.startsWith('/')) {
-            return { type: 'xpath', value: ruleStr };
-        }
-        
-        // 检查是否是JSONPath
-        if (ruleStr.startsWith('$.') || ruleStr.startsWith('$[')) {
-            return { type: 'json', value: ruleStr };
-        }
-        
-        // 检查是否包含##替换规则
+    parseRulePart(ruleStr) {
+        // 检查替换规则
+        let replaceRegex = '';
+        let replacement = '';
         const replaceMatch = ruleStr.match(/^(.+?)##(.+?)(?:##(.+?))?$/);
         if (replaceMatch) {
-            return {
-                type: 'css',
-                value: replaceMatch[1],
-                replaceRegex: replaceMatch[2],
-                replacement: replaceMatch[3] || ''
-            };
+            ruleStr = replaceMatch[1];
+            replaceRegex = replaceMatch[2];
+            replacement = replaceMatch[3] || '';
         }
         
-        // 默认CSS选择器
-        return { type: 'css', value: ruleStr };
-    }
-
-    /**
-     * 执行单个规则
-     */
-    executeRule(rule, context, baseUrl) {
-        switch (rule.type) {
-            case 'css':
-                return this.executeCss(rule, context, baseUrl);
-            case 'xpath':
-                return this.executeXPath(rule, context);
-            case 'json':
-                return this.executeJson(rule, context);
-            case 'js':
-                return this.executeJs(rule, context, baseUrl);
-            case 'regex':
-                return this.executeRegex(rule, context);
-            default:
-                return context;
-        }
-    }
-
-    /**
-     * 执行CSS选择器
-     */
-    executeCss(rule, context, baseUrl) {
-        let selector = rule.value;
-        let attr = null;
-        
-        // 检查属性选择器 (如: a@href, img@src)
-        if (selector.includes('@')) {
-            const parts = selector.split('@');
-            selector = parts[0];
-            attr = parts[1];
-        }
-        
-        // 处理.0, .1等索引
+        // 解析选择器和属性
+        let selector = ruleStr;
+        let attr = 'text';
         let index = -1;
+        
+        // 处理@属性
+        const atIndex = selector.lastIndexOf('@');
+        if (atIndex > 0) {
+            attr = selector.substring(atIndex + 1);
+            selector = selector.substring(0, atIndex);
+        }
+        
+        // 处理.索引 (如: .author.0)
         const indexMatch = selector.match(/\.(\d+)$/);
         if (indexMatch) {
             index = parseInt(indexMatch[1]);
             selector = selector.substring(0, selector.length - indexMatch[0].length);
         }
         
-        // 处理class.tag格式 (如: author.0@text)
-        selector = selector.replace(/\./g, '.');
+        // 确定规则类型
+        let type = 'css';
+        if (selector.startsWith('/')) {
+            type = 'xpath';
+        } else if (selector.startsWith('$.') || selector.startsWith('$[')) {
+            type = 'json';
+        } else if (selector.startsWith(':')) {
+            type = 'regex';
+            selector = selector.substring(1);
+        }
         
+        return {
+            type,
+            selector,
+            attr,
+            index,
+            replaceRegex,
+            replacement
+        };
+    }
+
+    /**
+     * 执行规则
+     */
+    executeRule(rule, context) {
+        let result;
+        
+        switch (rule.type) {
+            case 'css':
+                result = this.executeCss(rule, context);
+                break;
+            case 'xpath':
+                result = this.executeXPath(rule, context);
+                break;
+            case 'json':
+                result = this.executeJson(rule, context);
+                break;
+            case 'js':
+                result = this.executeJs(rule, context);
+                break;
+            case 'regex':
+                result = this.executeRegex(rule, context);
+                break;
+            default:
+                result = context;
+        }
+        
+        // 应用替换
+        if (rule.replaceRegex && result) {
+            result = this.toString(result).replace(
+                new RegExp(rule.replaceRegex, 'g'), 
+                rule.replacement
+            );
+        }
+        
+        return result;
+    }
+
+    /**
+     * 执行CSS选择器
+     */
+    executeCss(rule, context) {
+        let selector = rule.selector;
+        
+        // 转换Legado格式到标准CSS
+        // class.tag -> .class tag
+        // class.0 -> .class (索引在rule.index中)
+        selector = this.convertSelector(selector);
+        
+        // 获取元素
         let elements;
         if (context.querySelectorAll) {
-            elements = context.querySelectorAll(selector);
+            elements = Array.from(context.querySelectorAll(selector));
         } else if (context.querySelector) {
             const el = context.querySelector(selector);
             elements = el ? [el] : [];
@@ -205,47 +334,86 @@ class RuleParser {
             return '';
         }
         
-        if (index >= 0 && index < elements.length) {
-            elements = [elements[index]];
+        if (elements.length === 0) return '';
+        
+        // 应用索引
+        if (rule.index >= 0) {
+            elements = rule.index < elements.length ? [elements[rule.index]] : [];
         }
         
         if (elements.length === 0) return '';
         
-        // 获取结果
-        let result;
-        if (attr) {
-            if (attr === 'text' || attr === 'textContent') {
-                result = Array.from(elements).map(el => el.textContent.trim()).join('\n');
-            } else if (attr === 'html' || attr === 'innerHTML') {
-                result = Array.from(elements).map(el => el.innerHTML).join('\n');
-            } else if (attr === 'href' || attr === 'src') {
-                let url = elements[0].getAttribute(attr) || '';
-                if (url && !url.startsWith('http') && baseUrl) {
-                    url = new URL(url, baseUrl).href;
-                }
-                result = url;
-            } else {
-                result = elements[0].getAttribute(attr) || '';
-            }
-        } else {
-            result = elements.length === 1 ? elements[0] : Array.from(elements);
-        }
-        
-        // 应用正则替换
-        if (rule.replaceRegex && result) {
-            result = result.replace(new RegExp(rule.replaceRegex, 'g'), rule.replacement || '');
-        }
-        
-        return result;
+        // 获取属性
+        return this.getElementValue(elements[0], rule.attr);
     }
 
     /**
-     * 执行XPath (简化实现)
+     * 转换选择器格式
+     */
+    convertSelector(selector) {
+        // 处理[property$=xxx]格式
+        selector = selector.replace(/\[property\$=([^\]]+)\]/g, '[property$1]');
+        
+        // 处理.连接的class
+        // .author.0 -> .author (索引已单独处理)
+        // .bookname a -> .bookname a
+        
+        return selector;
+    }
+
+    /**
+     * 获取元素值
+     */
+    getElementValue(element, attr) {
+        if (!element) return '';
+        
+        switch (attr) {
+            case 'text':
+            case 'textContent':
+            case 'textNodes':
+                return element.textContent?.trim() || '';
+            case 'html':
+            case 'innerHTML':
+                return element.innerHTML || '';
+            case 'href':
+            case 'src':
+                let url = element.getAttribute(attr) || '';
+                if (url && !url.startsWith('http') && this.baseUrl) {
+                    try {
+                        url = new URL(url, this.baseUrl).href;
+                    } catch (e) {}
+                }
+                return url;
+            case 'content':
+            case 'value':
+                return element.getAttribute('content') || 
+                       element.getAttribute('value') || 
+                       element.textContent?.trim() || '';
+            default:
+                return element.getAttribute(attr) || 
+                       element.textContent?.trim() || '';
+        }
+    }
+
+    /**
+     * 执行XPath
      */
     executeXPath(rule, context) {
-        // 浏览器环境不支持原生XPath，需要polyfill
-        console.warn('XPath暂不支持:', rule.value);
-        return '';
+        // 浏览器环境需要XPath支持
+        try {
+            const doc = context.ownerDocument || context;
+            const result = doc.evaluate(
+                rule.selector,
+                context,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+            );
+            return result.singleNodeValue?.textContent || '';
+        } catch (e) {
+            if (this.debug) console.warn('XPath不支持:', rule.selector);
+            return '';
+        }
     }
 
     /**
@@ -258,21 +426,16 @@ class RuleParser {
                 json = JSON.parse(context);
             }
             
-            const path = rule.value;
-            // 简单JSONPath实现
+            const path = rule.selector;
             const parts = path.replace(/^\$\.?/, '').split(/\.|\[|\]/).filter(p => p);
             let result = json;
             
             for (const part of parts) {
                 if (result === null || result === undefined) return '';
-                if (typeof part === 'string' && !isNaN(part)) {
-                    result = result[parseInt(part)];
-                } else {
-                    result = result[part];
-                }
+                result = result[part];
             }
             
-            return result;
+            return result || '';
         } catch (e) {
             return '';
         }
@@ -281,18 +444,26 @@ class RuleParser {
     /**
      * 执行JS规则
      */
-    async executeJs(rule, context, baseUrl) {
+    executeJs(rule, context) {
         try {
-            const jsCode = rule.value;
-            const executor = new JsRuleExecutor();
+            const result = this.toString(context);
             
-            return await executor.execute(jsCode, {
-                result: this.toString(context),
-                baseUrl: baseUrl,
-                src: context
-            });
+            // 创建沙箱执行环境
+            const fn = new Function('java', 'result', 'baseUrl', 'src', rule.value);
+            
+            // 模拟java对象
+            const javaMock = {
+                ajax: (url) => {
+                    console.warn('java.ajax需要异步执行');
+                    return '';
+                },
+                connect: (url) => '',
+                toast: (msg) => console.log('Toast:', msg)
+            };
+            
+            return fn(javaMock, result, this.baseUrl, context) || '';
         } catch (e) {
-            console.error('JS执行错误:', e);
+            if (this.debug) console.error('JS执行错误:', e);
             return '';
         }
     }
@@ -303,12 +474,102 @@ class RuleParser {
     executeRegex(rule, context) {
         try {
             const text = this.toString(context);
-            const regex = new RegExp(rule.value, 'g');
+            const regex = new RegExp(rule.selector, 'g');
             const matches = text.match(regex);
             return matches ? matches.join('\n') : '';
         } catch (e) {
             return '';
         }
+    }
+
+    /**
+     * 获取元素列表内部实现
+     */
+    getElementsInternal(context, ruleStr) {
+        const rule = this.parseRulePart(ruleStr);
+        
+        if (rule.type === 'css') {
+            const selector = this.convertSelector(rule.selector);
+            if (context.querySelectorAll) {
+                return Array.from(context.querySelectorAll(selector));
+            }
+        }
+        
+        return [];
+    }
+
+    /**
+     * 检查是否包含操作符（排除引号和括号内的）
+     */
+    containsOperator(str, op) {
+        let depth = 0;
+        let inQuote = false;
+        let quoteChar = '';
+        
+        for (let i = 0; i < str.length; i++) {
+            const char = str[i];
+            
+            if (inQuote) {
+                if (char === quoteChar) inQuote = false;
+                continue;
+            }
+            
+            if (char === '"' || char === "'") {
+                inQuote = true;
+                quoteChar = char;
+                continue;
+            }
+            
+            if (char === '(' || char === '[') depth++;
+            else if (char === ')' || char === ']') depth--;
+            else if (depth === 0 && str.substring(i, i + op.length) === op) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * 按操作符分割（排除引号和括号内的）
+     */
+    splitByOperator(str, op) {
+        const parts = [];
+        let current = '';
+        let depth = 0;
+        let inQuote = false;
+        let quoteChar = '';
+        
+        for (let i = 0; i < str.length; i++) {
+            const char = str[i];
+            
+            if (inQuote) {
+                current += char;
+                if (char === quoteChar) inQuote = false;
+                continue;
+            }
+            
+            if (char === '"' || char === "'") {
+                inQuote = true;
+                quoteChar = char;
+                current += char;
+                continue;
+            }
+            
+            if (char === '(' || char === '[') depth++;
+            else if (char === ')' || char === ']') depth--;
+            
+            if (depth === 0 && str.substring(i, i + op.length) === op) {
+                parts.push(current);
+                current = '';
+                i += op.length - 1;
+            } else {
+                current += char;
+            }
+        }
+        
+        parts.push(current);
+        return parts;
     }
 
     /**

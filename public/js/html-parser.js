@@ -1,13 +1,8 @@
 /**
- * HTML解析模块 - 参考Legado实现
- * 支持完整的书源规则语法
+ * HTML解析模块 - 使用RuleParser
  */
 
 class HtmlParser {
-    constructor() {
-        this.ruleParser = new RuleParser();
-    }
-
     /**
      * 解析搜索结果
      */
@@ -19,23 +14,23 @@ class HtmlParser {
         try {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
+            const ruleParser = new RuleParser();
             
-            // 获取书籍列表
-            const listRule = rule.bookList;
-            const elements = this.getElements(doc, listRule, baseUrl);
+            // 获取书籍列表元素
+            const elements = ruleParser.getElements(doc, rule.bookList, baseUrl);
             
             console.log(`parseSearchResult: 找到 ${elements.length} 个元素`);
             
             for (const el of elements) {
                 const book = {
-                    name: this.getString(el, rule.name, baseUrl),
-                    author: this.getString(el, rule.author, baseUrl),
-                    bookUrl: this.getString(el, rule.bookUrl, baseUrl),
-                    coverUrl: this.getString(el, rule.coverUrl, baseUrl),
-                    intro: this.getString(el, rule.intro, baseUrl),
-                    kind: this.getString(el, rule.kind, baseUrl),
-                    lastChapter: this.getString(el, rule.lastChapter, baseUrl),
-                    wordCount: this.getString(el, rule.wordCount, baseUrl),
+                    name: ruleParser.getString(el, rule.name, baseUrl),
+                    author: ruleParser.getString(el, rule.author, baseUrl),
+                    bookUrl: ruleParser.getString(el, rule.bookUrl, baseUrl),
+                    coverUrl: ruleParser.getString(el, rule.coverUrl, baseUrl),
+                    intro: ruleParser.getString(el, rule.intro, baseUrl),
+                    kind: ruleParser.getString(el, rule.kind, baseUrl),
+                    lastChapter: ruleParser.getString(el, rule.lastChapter, baseUrl),
+                    wordCount: ruleParser.getString(el, rule.wordCount, baseUrl),
                     origin: source?.bookSourceUrl || '',
                     originName: source?.bookSourceName || '',
                     type: source?.bookSourceType || 0,
@@ -44,7 +39,7 @@ class HtmlParser {
                 
                 // 清理作者名
                 if (book.author) {
-                    book.author = book.author.replace(/作者[：:]/g, '').trim();
+                    book.author = book.author.replace(/作者[：:]\s*/g, '').trim();
                 }
                 
                 if (book.name && book.bookUrl) {
@@ -66,21 +61,22 @@ class HtmlParser {
         
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
+        const ruleParser = new RuleParser();
         
         const info = {
-            name: this.getString(doc, rule?.name, baseUrl),
-            author: this.getString(doc, rule?.author, baseUrl),
-            intro: this.getString(doc, rule?.intro, baseUrl),
-            coverUrl: this.getString(doc, rule?.coverUrl, baseUrl),
-            tocUrl: this.getString(doc, rule?.tocUrl, baseUrl) || baseUrl,
-            kind: this.getString(doc, rule?.kind, baseUrl),
-            lastChapter: this.getString(doc, rule?.lastChapter, baseUrl),
-            wordCount: this.getString(doc, rule?.wordCount, baseUrl)
+            name: ruleParser.getString(doc, rule?.name, baseUrl),
+            author: ruleParser.getString(doc, rule?.author, baseUrl),
+            intro: ruleParser.getString(doc, rule?.intro, baseUrl),
+            coverUrl: ruleParser.getString(doc, rule?.coverUrl, baseUrl),
+            tocUrl: ruleParser.getString(doc, rule?.tocUrl, baseUrl) || baseUrl,
+            kind: ruleParser.getString(doc, rule?.kind, baseUrl),
+            lastChapter: ruleParser.getString(doc, rule?.lastChapter, baseUrl),
+            wordCount: ruleParser.getString(doc, rule?.wordCount, baseUrl)
         };
         
         // 清理作者名
         if (info.author) {
-            info.author = info.author.replace(/作者[：:]/g, '').trim();
+            info.author = info.author.replace(/作者[：:]\s*/g, '').trim();
         }
         
         return info;
@@ -97,16 +93,17 @@ class HtmlParser {
         try {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
+            const ruleParser = new RuleParser();
             
-            const elements = this.getElements(doc, rule.chapterList, baseUrl);
+            const elements = ruleParser.getElements(doc, rule.chapterList, baseUrl);
             
             console.log(`parseChapterList: 找到 ${elements.length} 个章节`);
             
             elements.forEach((el, index) => {
                 const chapter = {
                     index: index,
-                    title: this.getString(el, rule.chapterName, baseUrl),
-                    url: this.getString(el, rule.chapterUrl, baseUrl),
+                    title: ruleParser.getString(el, rule.chapterName, baseUrl),
+                    url: ruleParser.getString(el, rule.chapterUrl, baseUrl),
                     isVip: false,
                     isPay: false
                 };
@@ -146,12 +143,13 @@ class HtmlParser {
         try {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
+            const ruleParser = new RuleParser();
             
             result.debug.htmlLength = html.length;
             result.debug.rule = rule.content;
             
             // 获取内容
-            let content = this.getString(doc, rule.content, baseUrl);
+            let content = ruleParser.getString(doc, rule.content, baseUrl);
             
             if (content) {
                 result.content = this.cleanContent(content);
@@ -167,246 +165,6 @@ class HtmlParser {
         }
         
         return result;
-    }
-
-    /**
-     * 获取字符串结果
-     */
-    static getString(context, ruleStr, baseUrl = '') {
-        if (!ruleStr || !context) return '';
-        
-        try {
-            // 处理JS规则
-            if (ruleStr.includes('<js>') || ruleStr.includes('@js:')) {
-                return this.executeJsRule(ruleStr, context, baseUrl);
-            }
-            
-            // 处理||分隔符（多个规则，任一成功即可）
-            if (ruleStr.includes('||')) {
-                const rules = ruleStr.split('||');
-                for (const r of rules) {
-                    const result = this.getString(context, r.trim(), baseUrl);
-                    if (result) return result;
-                }
-                return '';
-            }
-            
-            // 处理&&分隔符（多个规则，都要执行）
-            if (ruleStr.includes('&&')) {
-                const rules = ruleStr.split('&&');
-                const results = [];
-                for (const r of rules) {
-                    const result = this.getString(context, r.trim(), baseUrl);
-                    if (result) results.push(result);
-                }
-                return results.join('\n');
-            }
-            
-            // 处理##替换规则
-            let replaceRegex = '';
-            let replacement = '';
-            const replaceMatch = ruleStr.match(/^(.+?)##(.+?)(?:##(.+?))?$/);
-            if (replaceMatch) {
-                ruleStr = replaceMatch[1];
-                replaceRegex = replaceMatch[2];
-                replacement = replaceMatch[3] || '';
-            }
-            
-            // 解析选择器和属性
-            let selector = ruleStr;
-            let attr = 'text';
-            let index = -1;
-            
-            // 处理@属性
-            if (selector.includes('@')) {
-                const parts = selector.split('@');
-                selector = parts[0];
-                attr = parts[1] || 'text';
-            }
-            
-            // 处理.索引 (如: .author.0@text)
-            const indexMatch = selector.match(/\.(\d+)$/);
-            if (indexMatch) {
-                index = parseInt(indexMatch[1]);
-                selector = selector.substring(0, selector.length - indexMatch[0].length);
-            }
-            
-            // 处理class选择器 (如: .bookname a -> .bookname a)
-            // Legado格式: class.tag 或 class.0.tag
-            selector = selector
-                .replace(/^class\./, '.')
-                .replace(/\.([a-zA-Z])/g, '.$1');
-            
-            // 执行选择器
-            let elements;
-            if (typeof selector === 'string' && selector.startsWith('//')) {
-                // XPath - 浏览器不支持，跳过
-                console.warn('XPath不支持:', selector);
-                return '';
-            } else if (selector.startsWith('$.') || selector.startsWith('$[')) {
-                // JSONPath
-                return this.executeJsonPath(context, selector);
-            } else {
-                // CSS选择器
-                elements = context.querySelectorAll ? 
-                    context.querySelectorAll(selector) : 
-                    (context.querySelector ? [context.querySelector(selector)].filter(Boolean) : []);
-            }
-            
-            if (elements.length === 0) return '';
-            
-            // 应用索引
-            if (index >= 0) {
-                elements = index < elements.length ? [elements[index]] : [];
-            }
-            
-            // 获取属性值
-            let result = '';
-            const el = elements[0];
-            
-            if (attr === 'text' || attr === 'textContent') {
-                result = el.textContent || '';
-            } else if (attr === 'html' || attr === 'innerHTML') {
-                result = el.innerHTML || '';
-            } else if (attr === 'href' || attr === 'src') {
-                result = el.getAttribute(attr) || '';
-                // 转换为绝对URL
-                if (result && !result.startsWith('http') && baseUrl) {
-                    try {
-                        result = new URL(result, baseUrl).href;
-                    } catch (e) {}
-                }
-            } else if (attr === 'content') {
-                // meta标签的content属性
-                result = el.getAttribute('content') || el.getAttribute('value') || '';
-            } else {
-                result = el.getAttribute(attr) || el.textContent || '';
-            }
-            
-            // 应用正则替换
-            if (replaceRegex && result) {
-                result = result.replace(new RegExp(replaceRegex, 'g'), replacement);
-            }
-            
-            return result.trim();
-            
-        } catch (e) {
-            console.error('getString错误:', e, ruleStr);
-            return '';
-        }
-    }
-
-    /**
-     * 获取元素列表
-     */
-    static getElements(context, ruleStr, baseUrl = '') {
-        if (!ruleStr || !context) return [];
-        
-        try {
-            // 处理负号（反向）
-            let reverse = false;
-            if (ruleStr.startsWith('-')) {
-                reverse = true;
-                ruleStr = ruleStr.substring(1);
-            }
-            
-            // 处理正号
-            if (ruleStr.startsWith('+')) {
-                ruleStr = ruleStr.substring(1);
-            }
-            
-            // 处理JS规则
-            if (ruleStr.includes('<js>') || ruleStr.includes('@js:')) {
-                const result = this.executeJsRule(ruleStr, context, baseUrl);
-                return Array.isArray(result) ? result : [result];
-            }
-            
-            // CSS选择器
-            let elements = context.querySelectorAll ? 
-                Array.from(context.querySelectorAll(ruleStr)) : 
-                [];
-            
-            if (reverse) {
-                elements = elements.reverse();
-            }
-            
-            return elements;
-            
-        } catch (e) {
-            console.error('getElements错误:', e, ruleStr);
-            return [];
-        }
-    }
-
-    /**
-     * 执行JS规则
-     */
-    static executeJsRule(ruleStr, context, baseUrl) {
-        try {
-            // 提取JS代码
-            let jsCode = ruleStr;
-            if (jsCode.startsWith('<js>')) {
-                jsCode = jsCode.replace(/^<js>|<\/js>$/g, '');
-            } else if (jsCode.startsWith('@js:')) {
-                jsCode = jsCode.substring(4);
-            }
-            
-            // 获取上下文内容
-            const result = typeof context === 'string' ? context : 
-                (context.textContent || context.innerHTML || '');
-            
-            // 创建执行器并执行
-            const executor = new JsRuleExecutor();
-            
-            // 同步执行（简化版）
-            const wrappedCode = `
-                (function(java, result, baseUrl, src) {
-                    ${jsCode}
-                })
-            `;
-            
-            const fn = eval(wrappedCode);
-            const javaMock = {
-                ajax: (url) => {
-                    console.warn('java.ajax需要在服务端执行:', url);
-                    return '';
-                }
-            };
-            
-            return fn(javaMock, result, baseUrl, context) || '';
-            
-        } catch (e) {
-            console.error('JS规则执行错误:', e);
-            return '';
-        }
-    }
-
-    /**
-     * 执行JSONPath
-     */
-    static executeJsonPath(context, path) {
-        try {
-            let json = context;
-            if (typeof context === 'string') {
-                try {
-                    json = JSON.parse(context);
-                } catch (e) {
-                    return '';
-                }
-            }
-            
-            const parts = path.replace(/^\$\.?/, '').split(/\.|\[|\]/).filter(p => p);
-            let result = json;
-            
-            for (const part of parts) {
-                if (result === null || result === undefined) return '';
-                result = result[part];
-            }
-            
-            return result || '';
-        } catch (e) {
-            return '';
-        }
     }
 
     /**
