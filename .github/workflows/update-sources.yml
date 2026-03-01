@@ -14,33 +14,207 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Download book sources
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Download and test book sources
         run: |
-          echo "下载书源..."
+          echo "📥 下载书源..."
           
           # 下载书源JSON文件
-          curl -sL "https://www.yckceo.com/yuedu/shuyuans/json/id/1063.json" -o sources_new.json
+          curl -sL "https://www.yckceo.com/yuedu/shuyuans/json/id/1063.json" -o sources_raw.json
           
           # 检查是否下载成功
-          if [ -s sources_new.json ]; then
-            echo "下载成功，文件大小: $(wc -c < sources_new.json) 字节"
-            
-            # 统计书源数量
-            SOURCES_COUNT=$(node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('sources_new.json')); console.log(data.length);")
-            echo "书源数量: $SOURCES_COUNT"
-            
-            # 替换原文件
-            mv sources_new.json public/sources.json
-          else
-            echo "下载失败，保留原文件"
+          if [ ! -s sources_raw.json ]; then
+            echo "❌ 下载失败"
+            exit 1
           fi
-      
+          
+          echo "✅ 下载成功，文件大小: $(wc -c < sources_raw.json) 字节"
+          
+          # 创建测试脚本
+          cat > test_sources.js << 'SCRIPT'
+          const fs = require('fs');
+          const https = require('https');
+          const http = require('http');
+          
+          // 从各种格式中提取书源数组
+          function extractBookSources(data) {
+            if (Array.isArray(data)) return data;
+            if (data && data.bookSourceName && data.bookSourceUrl) return [data];
+            
+            // 处理嵌套格式
+            if (data && data.content && Array.isArray(data.content)) {
+              const sources = [];
+              for (const item of data.content) {
+                if (item && item.text) {
+                  try {
+                    const parsed = JSON.parse(item.text);
+                    if (Array.isArray(parsed)) sources.push(...parsed);
+                    else if (parsed && typeof parsed === 'object') sources.push(parsed);
+                  } catch (e) {}
+                }
+              }
+              if (sources.length > 0) return sources;
+            }
+            
+            // 其他格式
+            if (data && typeof data.content === 'string') {
+              try {
+                const parsed = JSON.parse(data.content);
+                if (Array.isArray(parsed)) return parsed;
+              } catch (e) {}
+            }
+            if (data && data.data && Array.isArray(data.data)) return data.data;
+            if (data && data.sources && Array.isArray(data.sources)) return data.sources;
+            
+            return [];
+          }
+          
+          // 测试URL是否可访问
+          function testUrl(url, timeout = 10000) {
+            return new Promise((resolve) => {
+              if (!url) {
+                resolve({ success: false, error: 'URL为空' });
+                return;
+              }
+              
+              const protocol = url.startsWith('https') ? https : http;
+              const timer = setTimeout(() => {
+                resolve({ success: false, error: '超时' });
+              }, timeout);
+              
+              try {
+                const req = protocol.get(url, (res) => {
+                  clearTimeout(timer);
+                  if (res.statusCode >= 200 && res.statusCode < 400) {
+                    resolve({ success: true });
+                  } else if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    // 跟随重定向
+                    testUrl(res.headers.location, timeout).then(resolve);
+                  } else {
+                    resolve({ success: false, error: `状态码: ${res.statusCode}` });
+                  }
+                });
+                
+                req.on('error', (e) => {
+                  clearTimeout(timer);
+                  resolve({ success: false, error: e.message });
+                });
+              } catch (e) {
+                clearTimeout(timer);
+                resolve({ success: false, error: e.message });
+              }
+            });
+          }
+          
+          // 测试书源
+          async function testSource(source) {
+            const result = {
+              source,
+              valid: false,
+              error: ''
+            };
+            
+            // 测试首页
+            const homeResult = await testUrl(source.bookSourceUrl, 10000);
+            if (!homeResult.success) {
+              result.error = `首页无法访问: ${homeResult.error}`;
+              return result;
+            }
+            
+            // 如果有搜索URL，测试搜索功能
+            if (source.searchUrl) {
+              const searchUrl = source.searchUrl
+                .replace('{{key}}', encodeURIComponent('斗罗'))
+                .replace('{{page}}', '1');
+              const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
+              
+              const searchResult = await testUrl(fullUrl, 10000);
+              if (!searchResult.success) {
+                result.error = `搜索无法访问: ${searchResult.error}`;
+                return result;
+              }
+            }
+            
+            result.valid = true;
+            return result;
+          }
+          
+          async function main() {
+            const rawData = JSON.parse(fs.readFileSync('sources_raw.json', 'utf8'));
+            const sources = extractBookSources(rawData);
+            
+            console.log(`📊 总书源数: ${sources.length}`);
+            
+            const validSources = [];
+            const invalidSources = [];
+            
+            // 并发测试，每次5个
+            const batchSize = 5;
+            for (let i = 0; i < sources.length; i += batchSize) {
+              const batch = sources.slice(i, i + batchSize);
+              const results = await Promise.all(batch.map(testSource));
+              
+              for (const r of results) {
+                if (r.valid) {
+                  validSources.push(r.source);
+                } else {
+                  invalidSources.push({
+                    name: r.source.bookSourceName,
+                    error: r.error
+                  });
+                }
+              }
+              
+              console.log(`⏳ 进度: ${Math.min(i + batchSize, sources.length)}/${sources.length}`);
+            }
+            
+            console.log(`\n✅ 有效书源: ${validSources.length}`);
+            console.log(`❌ 失效书源: ${invalidSources.length}`);
+            
+            // 输出失效书源列表（前20个）
+            if (invalidSources.length > 0) {
+              console.log('\n失效书源列表:');
+              invalidSources.slice(0, 20).forEach(s => {
+                console.log(`  - ${s.name}: ${s.error}`);
+              });
+              if (invalidSources.length > 20) {
+                console.log(`  ... 还有 ${invalidSources.length - 20} 个`);
+              }
+            }
+            
+            // 保存有效书源
+            fs.writeFileSync('public/sources.json', JSON.stringify(validSources, null, 2));
+            console.log(`\n💾 已保存 ${validSources.length} 个有效书源到 public/sources.json`);
+            
+            // 保存测试报告
+            const report = {
+              updateTime: new Date().toISOString(),
+              total: sources.length,
+              valid: validSources.length,
+              invalid: invalidSources.length,
+              invalidList: invalidSources
+            };
+            fs.writeFileSync('test_report.json', JSON.stringify(report, null, 2));
+          }
+          
+          main().catch(console.error);
+          SCRIPT
+          
+          # 运行测试
+          echo ""
+          echo "🧪 开始测试书源有效性..."
+          node test_sources.js
+          
       - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git diff --quiet && git diff --staged --quiet || git commit -m "自动更新书源 $(date '+%Y-%m-%d')"
+          git diff --quiet && git diff --staged --quiet || git commit -m "自动更新书源 $(date '+%Y-%m-%d') - 已过滤失效书源"
       
       - name: Push changes
         uses: ad-m/github-push-action@master
