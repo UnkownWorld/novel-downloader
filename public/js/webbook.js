@@ -1,232 +1,174 @@
 /**
- * WebBook模块
- * 参考 Legado WebBook.kt
- * 处理搜索、发现、书籍信息、目录、内容
+ * WebBook模块 - 参考Legado实现
+ * 提供完整的书源操作功能
  */
 
 class WebBook {
     constructor(source) {
         this.source = source;
+        this.ruleParser = new RuleParser();
     }
-    
+
     /**
      * 搜索书籍
      */
-    async searchBook(key, page = 1) {
-        if (!this.source.searchUrl) {
-            throw new Error('书源未配置搜索URL');
+    async searchBook(keyword, page = 1) {
+        const searchUrl = this.source.searchUrl;
+        if (!searchUrl) {
+            throw new Error('搜索URL不能为空');
         }
+
+        // 解析搜索URL
+        const urlInfo = this.parseUrl(searchUrl, { key: keyword, page: page });
         
-        const analyzeUrl = new AnalyzeUrl(this.source.searchUrl, {
-            key: key,
-            page: page,
-            baseUrl: this.source.bookSourceUrl,
-            source: this.source
-        });
+        // 发起请求
+        const response = await this.fetchUrl(urlInfo);
         
-        const response = await analyzeUrl.getStrResponse();
-        
-        if (!response.success) {
-            throw new Error(response.error || '搜索请求失败');
-        }
-        
-        // 解析搜索结果
-        return this.parseBookList(response.body, this.source.ruleSearch, true);
+        // 解析结果
+        return this.parseSearchResult(response);
     }
-    
-    /**
-     * 发现书籍
-     */
-    async exploreBook(url, page = 1) {
-        const analyzeUrl = new AnalyzeUrl(url, {
-            page: page,
-            baseUrl: this.source.bookSourceUrl,
-            source: this.source
-        });
-        
-        const response = await analyzeUrl.getStrResponse();
-        
-        if (!response.success) {
-            throw new Error(response.error || '发现请求失败');
-        }
-        
-        return this.parseBookList(response.body, this.source.ruleExplore, false);
-    }
-    
+
     /**
      * 获取书籍信息
      */
-    async getBookInfo(book) {
-        const analyzeUrl = new AnalyzeUrl(book.bookUrl, {
-            baseUrl: this.source.bookSourceUrl,
-            source: this.source
+    async getBookInfo(bookUrl) {
+        const response = await this.fetchUrl({
+            url: bookUrl,
+            method: 'GET'
         });
         
-        const response = await analyzeUrl.getStrResponse();
-        
-        if (!response.success) {
-            throw new Error(response.error || '获取书籍信息失败');
-        }
-        
-        const rule = this.source.ruleBookInfo;
-        const analyzer = new AnalyzeRule(response.body, response.url, this.source);
-        
-        // 解析书籍信息
-        book.name = analyzer.getString(rule.name);
-        book.author = analyzer.getString(rule.author);
-        book.intro = analyzer.getString(rule.intro);
-        book.kind = analyzer.getString(rule.kind);
-        book.coverUrl = analyzer.getString(rule.coverUrl, true);
-        book.tocUrl = analyzer.getString(rule.tocUrl, true) || book.bookUrl;
-        book.wordCount = analyzer.getString(rule.wordCount);
-        book.lastChapter = analyzer.getString(rule.lastChapter);
-        
-        return book;
+        return HtmlParser.parseBookInfo(
+            response.body,
+            this.source.ruleBookInfo,
+            response.url
+        );
     }
-    
+
     /**
-     * 获取目录列表
+     * 获取章节列表
      */
-    async getChapterList(book) {
-        const tocUrl = book.tocUrl || book.bookUrl;
-        
-        const analyzeUrl = new AnalyzeUrl(tocUrl, {
-            baseUrl: this.source.bookSourceUrl,
-            source: this.source
+    async getChapterList(tocUrl) {
+        const response = await this.fetchUrl({
+            url: tocUrl,
+            method: 'GET'
         });
         
-        const response = await analyzeUrl.getStrResponse();
-        
-        if (!response.success) {
-            throw new Error(response.error || '获取目录失败');
-        }
-        
-        const rule = this.source.ruleToc;
-        const analyzer = new AnalyzeRule(response.body, response.url, this.source);
-        
-        // 获取章节列表
-        const chapterElements = analyzer.getElements(rule.chapterList);
-        const chapters = [];
-        
-        for (let i = 0; i < chapterElements.length; i++) {
-            const el = chapterElements[i];
-            const chapterAnalyzer = new AnalyzeRule(el, response.url, this.source);
-            
-            const chapter = {
-                index: i,
-                title: chapterAnalyzer.getString(rule.chapterName),
-                url: chapterAnalyzer.getString(rule.chapterUrl, true),
-                isVip: false,
-                isPay: false,
-                time: ''
-            };
-            
-            if (chapter.title && chapter.url) {
-                chapters.push(chapter);
-            }
-        }
-        
-        return chapters;
+        return HtmlParser.parseChapterList(
+            response.body,
+            this.source.ruleToc,
+            response.url
+        );
     }
-    
+
     /**
      * 获取章节内容
      */
-    async getContent(book, chapter, nextChapterUrl = null) {
-        const analyzeUrl = new AnalyzeUrl(chapter.url, {
-            baseUrl: book.tocUrl || book.bookUrl,
-            source: this.source
+    async getContent(chapterUrl, nextChapterUrl = null) {
+        const response = await this.fetchUrl({
+            url: chapterUrl,
+            method: 'GET'
         });
         
-        const response = await analyzeUrl.getStrResponse();
-        
-        if (!response.success) {
-            throw new Error(response.error || '获取内容失败');
-        }
-        
-        const rule = this.source.ruleContent;
-        const analyzer = new AnalyzeRule(response.body, response.url, this.source);
-        
-        let content = analyzer.getString(rule.content);
-        
-        // 处理下一页
-        if (rule.nextContentUrl) {
-            let nextUrl = analyzer.getString(rule.nextContentUrl, true);
-            let pageCount = 0;
-            const maxPages = 10;
-            
-            while (nextUrl && nextUrl !== chapter.url && pageCount < maxPages) {
-                const nextAnalyzeUrl = new AnalyzeUrl(nextUrl, {
-                    baseUrl: response.url,
-                    source: this.source
-                });
+        return HtmlParser.parseContent(
+            response.body,
+            this.source.ruleContent,
+            response.url
+        );
+    }
+
+    /**
+     * 解析URL规则
+     */
+    parseUrl(urlRule, params = {}) {
+        let url = urlRule;
+        let method = 'GET';
+        let body = null;
+        let headers = {};
+        let charset = 'UTF-8';
+
+        // 替换参数
+        url = url.replace(/\{\{key\}\}/g, encodeURIComponent(params.key || ''));
+        url = url.replace(/\{\{page\}\}/g, params.page || 1);
+
+        // 解析URL选项 (格式: url,{options})
+        const commaIndex = url.indexOf(',{');
+        if (commaIndex > 0) {
+            try {
+                const optionsStr = url.substring(commaIndex + 1);
+                const options = JSON.parse(optionsStr);
+                url = url.substring(0, commaIndex);
                 
-                const nextResponse = await nextAnalyzeUrl.getStrResponse();
-                if (!nextResponse.success) break;
-                
-                const nextAnalyzer = new AnalyzeRule(nextResponse.body, nextResponse.url, this.source);
-                content += '\n' + nextAnalyzer.getString(rule.content);
-                nextUrl = nextAnalyzer.getString(rule.nextContentUrl, true);
-                pageCount++;
+                method = options.method || 'GET';
+                body = options.body;
+                headers = options.headers || {};
+                charset = options.charset || 'UTF-8';
+
+                // 替换body中的参数
+                if (body) {
+                    body = body.replace(/\{\{key\}\}/g, encodeURIComponent(params.key || ''));
+                    body = body.replace(/\{\{page\}\}/g, params.page || 1);
+                }
+            } catch (e) {
+                console.warn('解析URL选项失败:', e);
             }
         }
-        
-        // 处理替换规则
-        if (rule.replaceRegex) {
-            content = content.replace(new RegExp(rule.replaceRegex, 'g'), rule.replacement || '');
+
+        // 处理相对URL
+        if (!url.startsWith('http')) {
+            url = this.source.bookSourceUrl.replace(/\/$/, '') + '/' + url.replace(/^\//, '');
         }
-        
-        // 处理图片
-        if (rule.imageStyle) {
-            content = this.processImages(content, rule.imageStyle);
-        }
-        
-        return content;
+
+        return { url, method, body, headers, charset };
     }
-    
+
     /**
-     * 解析书籍列表
+     * 发起请求
      */
-    parseBookList(content, rule, isSearch) {
-        if (!rule || !content) return [];
-        
-        const analyzer = new AnalyzeRule(content, '', this.source);
-        const bookElements = analyzer.getElements(rule.bookList);
-        const books = [];
-        
-        for (const el of bookElements) {
-            const bookAnalyzer = new AnalyzeRule(el, '', this.source);
-            
-            const book = {
-                name: bookAnalyzer.getString(rule.name),
-                author: bookAnalyzer.getString(rule.author),
-                bookUrl: bookAnalyzer.getString(rule.bookUrl, true),
-                coverUrl: bookAnalyzer.getString(rule.coverUrl, true),
-                intro: bookAnalyzer.getString(rule.intro),
-                kind: bookAnalyzer.getString(rule.kind),
-                lastChapter: bookAnalyzer.getString(rule.lastChapter),
-                wordCount: bookAnalyzer.getString(rule.wordCount),
-                origin: this.source.bookSourceUrl,
-                originName: this.source.bookSourceName,
-                type: this.source.bookSourceType || 0,
-                time: Date.now()
-            };
-            
-            if (book.name && book.bookUrl) {
-                books.push(book);
+    async fetchUrl(urlInfo) {
+        const options = {
+            method: urlInfo.method,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                ...urlInfo.headers
+            }
+        };
+
+        if (urlInfo.body && urlInfo.method === 'POST') {
+            options.body = urlInfo.body;
+            if (!options.headers['Content-Type']) {
+                options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
             }
         }
+
+        // 通过代理请求
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(urlInfo.url)}&options=${encodeURIComponent(JSON.stringify(options))}`;
         
-        return books;
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || '请求失败');
+        }
+
+        return {
+            url: data.url,
+            body: data.body,
+            status: data.status
+        };
     }
-    
+
     /**
-     * 处理图片
+     * 解析搜索结果
      */
-    processImages(content, imageStyle) {
-        return content.replace(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi, (match, src) => {
-            return `<img src="${src}" style="${imageStyle}">`;
-        });
+    parseSearchResult(response) {
+        return HtmlParser.parseSearchResult(
+            response.body,
+            this.source.ruleSearch,
+            response.url,
+            this.source
+        );
     }
 }
 
