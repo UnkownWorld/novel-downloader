@@ -478,9 +478,6 @@ class App {
             </div>
         `;
     }
-            </div>
-        `;
-    }
     
     // ==================== 书架功能 ====================
     
@@ -598,6 +595,7 @@ class App {
         selectDiv.innerHTML = html;
     }
     
+    async loadExplore() {
         this.currentExploreSource = this.sourceManager.getSource(sourceUrl);
         if (!this.currentExploreSource || !this.currentExploreSource.exploreUrl) {
             this.showToast('书源不支持发现', true);
