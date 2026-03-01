@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小说下载器 - Legado书源</title>
+    <title>小说下载器 - Legado完整版</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -14,7 +14,7 @@
             color: #fff;
             font-size: 14px;
         }
-        .container { max-width: 900px; margin: 0 auto; }
+        .container { max-width: 1000px; margin: 0 auto; }
         .header { text-align: center; margin-bottom: 20px; }
         .header h1 { 
             font-size: 1.6rem; 
@@ -35,7 +35,7 @@
         .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
         .form-row input { flex: 1; min-width: 150px; }
         
-        input, select {
+        input, select, textarea {
             padding: 10px 12px;
             border: 1px solid rgba(255,255,255,0.2);
             background: rgba(255,255,255,0.1);
@@ -43,8 +43,8 @@
             border-radius: 6px;
             font-size: 0.9rem;
         }
-        input::placeholder { color: rgba(255,255,255,0.4); }
-        input:focus, select:focus { outline: none; border-color: #e94560; }
+        input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.4); }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #e94560; }
         select option { background: #1a1a2e; }
         
         .btn { 
@@ -96,7 +96,7 @@
             transform: translateX(200%);
             transition: transform 0.3s;
             z-index: 1000;
-            max-width: 280px;
+            max-width: 300px;
             font-size: 0.85rem;
         }
         .toast.show { transform: translateX(0); }
@@ -127,27 +127,21 @@
         }
         .source-item .name { font-weight: 500; }
         .source-item .url { font-size: 0.7rem; color: rgba(255,255,255,0.4); }
+        .source-item.disabled { opacity: 0.5; }
         
         textarea {
             width: 100%;
-            height: 100px;
-            padding: 10px;
-            border: 1px solid rgba(255,255,255,0.2);
-            background: rgba(255,255,255,0.05);
-            color: white;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 0.8rem;
+            height: 120px;
             resize: vertical;
+            font-family: monospace;
         }
-        textarea::placeholder { color: rgba(255,255,255,0.3); }
         
         .stats { display: flex; gap: 10px; margin-bottom: 12px; }
         .stat { text-align: center; padding: 8px 12px; background: rgba(233, 69, 96, 0.1); border-radius: 6px; border: 1px solid rgba(233, 69, 96, 0.2); }
         .stat .num { font-size: 1.3rem; font-weight: bold; color: #e94560; }
         .stat .label { font-size: 0.7rem; color: rgba(255,255,255,0.6); }
         
-        .source-list { max-height: 200px; overflow-y: auto; margin-bottom: 10px; }
+        .source-list { max-height: 300px; overflow-y: auto; margin-bottom: 10px; }
         
         .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
         
@@ -161,31 +155,49 @@
         .history-info h4 { font-size: 0.9rem; }
         .history-info p { font-size: 0.75rem; color: rgba(255,255,255,0.5); }
         
-        .chapter-list { max-height: 300px; overflow-y: auto; }
-        .chapter-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-size: 0.85rem; }
+        .chapter-list { max-height: 350px; overflow-y: auto; }
+        .chapter-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
         .chapter-item:hover { background: rgba(255,255,255,0.05); }
+        .chapter-item input { width: 16px; height: 16px; }
         
         .loading { text-align: center; padding: 20px; color: rgba(255,255,255,0.5); }
         
-        .code-block {
+        .log-panel {
             background: rgba(0,0,0,0.3);
-            padding: 10px;
             border-radius: 6px;
-            font-family: monospace;
-            font-size: 0.75rem;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-break: break-all;
+            padding: 10px;
             max-height: 150px;
             overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.75rem;
+            margin-top: 10px;
         }
+        .log-panel .log-item { margin-bottom: 2px; color: rgba(255,255,255,0.7); }
+        .log-panel .log-error { color: #e94560; }
+        .log-panel .log-success { color: #00b894; }
+        
+        .search-status {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .source-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            background: rgba(255,255,255,0.1);
+        }
+        .source-status.success { background: rgba(0, 184, 148, 0.3); }
+        .source-status.error { background: rgba(214, 48, 49, 0.3); }
+        .source-status.loading { background: rgba(255, 193, 7, 0.3); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📚 小说下载器</h1>
-            <p>基于Legado书源规则，支持完整规则解析</p>
+            <p>完整复刻Legado书源规则 | 支持所有选择器语法</p>
         </div>
         
         <div class="tabs">
@@ -205,6 +217,7 @@
                     </select>
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
                 </form>
+                <div class="search-status hidden" id="searchStatus"></div>
             </div>
             
             <div class="card hidden" id="resultsCard">
@@ -219,11 +232,17 @@
                     <div class="progress-text" id="progressText">准备中...</div>
                 </div>
                 <div id="chapterListSection" class="hidden" style="margin-top:12px">
-                    <h4 style="margin-bottom:8px;font-size:0.9rem">章节列表 <span id="chapterCount" style="opacity:0.6"></span></h4>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <h4 style="font-size:0.9rem">章节列表 <span id="chapterCount" style="opacity:0.6"></span></h4>
+                        <div class="btn-group">
+                            <button class="btn btn-small btn-secondary" onclick="selectAllChapters()">全选</button>
+                            <button class="btn btn-small btn-secondary" onclick="deselectAllChapters()">取消</button>
+                        </div>
+                    </div>
                     <div class="chapter-list" id="chapterList"></div>
                 </div>
                 <div class="btn-group hidden" id="downloadActions" style="margin-top:12px">
-                    <button class="btn" onclick="downloadSelected()">📥 下载选中章节</button>
+                    <button class="btn" onclick="downloadSelected()">📥 下载选中</button>
                     <button class="btn btn-success" onclick="downloadAll()">📥 下载全部</button>
                 </div>
             </div>
@@ -233,6 +252,7 @@
                     <div class="progress-bar"><div class="progress-fill" id="downloadProgressFill" style="width:0%"></div></div>
                     <div class="progress-text" id="downloadProgressText">准备中...</div>
                 </div>
+                <div class="log-panel" id="downloadLog"></div>
                 <div class="btn-group hidden" id="saveActions" style="margin-top:12px">
                     <button class="btn btn-success" onclick="saveToFile()">💾 保存到本地</button>
                     <button class="btn" onclick="copyToClipboard()">📋 复制</button>
@@ -246,40 +266,20 @@
                 <div class="stats">
                     <div class="stat">
                         <div class="num" id="sourceCount">0</div>
-                        <div class="label">书源数量</div>
+                        <div class="label">书源总数</div>
+                    </div>
+                    <div class="stat">
+                        <div class="num" id="enabledCount">0</div>
+                        <div class="label">已启用</div>
                     </div>
                 </div>
                 
                 <h3 style="margin-bottom:8px;font-size:0.95rem">导入书源</h3>
                 <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:8px">
-                    支持Legado完整格式JSON，包含搜索规则、目录规则、内容规则等
+                    支持Legado完整格式JSON，可以是单个书源或书源数组
                 </p>
                 
-                <textarea id="sourceInput" placeholder='粘贴Legado格式书源JSON，例如：
-{
-  "bookSourceName": "笔趣阁",
-  "bookSourceUrl": "https://www.biquge.com",
-  "searchUrl": "/search.php?keyword={{key}}",
-  "ruleSearch": {
-    "bookList": "#search-result-list li",
-    "name": ".result-game-item-title a",
-    "author": ".result-game-item-info-tag:eq(0) span:eq(1)",
-    "bookUrl": ".result-game-item-title a@href"
-  },
-  "ruleBookInfo": {
-    "name": "#info h1",
-    "author": "#info p:eq(0)",
-    "intro": "#intro"
-  },
-  "ruleToc": {
-    "chapterList": "#list dl dd a",
-    "chapterName": "text",
-    "chapterUrl": "href"
-  },
-  "ruleContent": {
-    "content": "#content"
-  }
-}'></textarea>
+                <textarea id="sourceInput" placeholder='粘贴Legado格式书源JSON...'></textarea>
                 
                 <div class="btn-group" style="margin-top:8px">
                     <button class="btn" onclick="importSources()">📥 导入JSON</button>
@@ -298,6 +298,7 @@
                 <div class="btn-group">
                     <button class="btn btn-success btn-small" onclick="loadDefaultSources()">📦 默认书源</button>
                     <button class="btn btn-secondary btn-small" onclick="exportSources()">📤 导出</button>
+                    <button class="btn btn-secondary btn-small" onclick="testAllSources()">🧪 测试全部</button>
                     <button class="btn btn-danger btn-small" onclick="clearSources()">🗑️ 清空</button>
                 </div>
             </div>
@@ -315,276 +316,758 @@
         <!-- 帮助页面 -->
         <div id="helpTab" class="hidden">
             <div class="card">
-                <h3 style="margin-bottom:10px;font-size:0.95rem">📖 书源规则说明</h3>
-                <div class="code-block">
-{
+                <h3 style="margin-bottom:10px;font-size:0.95rem">📖 Legado书源规则完整说明</h3>
+                
+                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">选择器类型</h4>
+                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
+                    <li><code>CSS选择器</code> - 如 <code>.class</code> <code>#id</code> <code>tag</code></li>
+                    <li><code>XPath</code> - 以 <code>//</code> 开头，如 <code>//div[@class='content']</code></li>
+                    <li><code>JSONPath</code> - 以 <code>$.</code> 开头，如 <code>$.data.list</code></li>
+                    <li><code>正则表达式</code> - 以 <code>:</code> 或 <code>@regex:</code> 开头</li>
+                    <li><code>JavaScript</code> - 以 <code>@js:</code> 开头</li>
+                </ul>
+                
+                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">Legado特殊语法</h4>
+                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
+                    <li><code>class.xxx</code> → <code>.xxx</code> CSS类选择器</li>
+                    <li><code>id.xxx</code> → <code>#xxx</code> ID选择器</li>
+                    <li><code>tag.xxx</code> → <code>xxx</code> 标签选择器</li>
+                    <li><code>text.xxx</code> → 包含文本xxx的元素</li>
+                    <li><code>.0</code> <code>.1</code> → 索引选择器</li>
+                    <li><code>.-1</code> → 最后一个元素</li>
+                    <li><code>@text</code> <code>@text()</code> → 获取文本</li>
+                    <li><code>@html</code> <code>@html()</code> → 获取HTML</li>
+                    <li><code>@href</code> <code>@src</code> → 获取属性</li>
+                    <li><code>@ownText</code> → 获取自身文本（不含子元素）</li>
+                    <li><code>##正则</code> → 正则替换</li>
+                    <li><code>##正则##替换</code> → 正则替换为指定内容</li>
+                    <li><code>&&</code> → 规则连接符</li>
+                    <li><code>@@</code> → 规则分隔符</li>
+                </ul>
+                
+                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">URL变量</h4>
+                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
+                    <li><code>{{key}}</code> → 搜索关键词</li>
+                    <li><code>{{page}}</code> → 页码</li>
+                </ul>
+                
+                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">完整书源示例</h4>
+                <pre style="background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:0.75rem;overflow-x:auto;white-space:pre-wrap">{
   "bookSourceName": "书源名称",
-  "bookSourceUrl": "书源基础URL",
-  "searchUrl": "搜索URL，{{key}}为关键词占位符",
-  
+  "bookSourceUrl": "https://example.com",
+  "searchUrl": "/search?keyword={{key}}&page={{page}}",
+  "enabled": true,
+  "header": "{\"User-Agent\": \"Mozilla/5.0\"}",
   "ruleSearch": {
-    "bookList": "书籍列表选择器",
-    "name": "书名选择器",
-    "author": "作者选择器",
-    "bookUrl": "书籍详情URL选择器",
-    "coverUrl": "封面选择器",
-    "intro": "简介选择器"
+    "bookList": "CSS选择器或XPath",
+    "name": "书名规则",
+    "author": "作者规则",
+    "bookUrl": "书籍URL规则",
+    "coverUrl": "封面规则",
+    "intro": "简介规则",
+    "kind": "分类规则",
+    "lastChapter": "最新章节规则",
+    "wordCount": "字数规则"
   },
-  
   "ruleBookInfo": {
     "name": "书名",
     "author": "作者",
     "intro": "简介",
     "coverUrl": "封面",
-    "tocUrl": "目录页URL"
+    "tocUrl": "目录页URL",
+    "kind": "分类",
+    "wordCount": "字数"
   },
-  
   "ruleToc": {
     "chapterList": "章节列表选择器",
-    "chapterName": "章节名选择器",
-    "chapterUrl": "章节URL选择器"
+    "chapterName": "章节名规则",
+    "chapterUrl": "章节URL规则",
+    "nextTocUrl": "下一页目录URL"
   },
-  
   "ruleContent": {
-    "content": "正文内容选择器"
+    "content": "正文内容规则",
+    "nextContentUrl": "下一页内容URL",
+    "replaceRegex": "替换规则"
   }
-}</div>
-                
-                <h4 style="margin:12px 0 8px;font-size:0.9rem">选择器语法</h4>
-                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
-                    <li><code>.class</code> - CSS类选择器</li>
-                    <li><code>#id</code> - ID选择器</li>
-                    <li><code>tag</code> - 标签选择器</li>
-                    <li><code>@attr</code> - 获取属性值</li>
-                    <li><code>@text</code> - 获取文本</li>
-                    <li><code>@html</code> - 获取HTML</li>
-                    <li><code>:eq(n)</code> - 第n个元素</li>
-                    <li><code>:first</code> / <code>:last</code> - 首个/末个</li>
-                    <li><code>##regex</code> - 正则替换</li>
-                    <li><code>{{key}}</code> - 关键词占位符</li>
-                    <li><code>{{page}}</code> - 页码占位符</li>
-                </ul>
+}</pre>
             </div>
         </div>
         
         <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:12px;font-size:0.75rem">
-            基于Legado书源规则 | 书源来源于网络，仅供学习交流
+            完整复刻Legado书源规则 | 书源来源于网络，仅供学习交流
         </div>
     </div>
     
     <div class="toast" id="toast"></div>
     
     <script>
-        // ========== 核心解析器 ==========
-        class RuleParser {
-            constructor(html) {
-                this.html = html;
-                this.doc = new DOMParser().parseFromString(html, 'text/html');
+        // ========== 完整复刻Legado规则解析器 ==========
+        class AnalyzeRule {
+            constructor() {
+                this.content = null;
+                this.baseUrl = '';
             }
             
-            // 解析选择器
-            parseSelector(selector) {
-                if (!selector) return null;
-                
-                // 处理特殊语法
-                let attr = 'text';
-                let filterRegex = null;
-                
-                // 分离属性获取器 @attr
-                if (selector.includes('@')) {
-                    const parts = selector.split('@');
-                    selector = parts[0].trim();
-                    attr = parts[1].trim();
-                }
-                
-                // 分离正则过滤器 ##
-                if (selector.includes('##')) {
-                    const parts = selector.split('##');
-                    selector = parts[0].trim();
-                    filterRegex = parts[1].trim();
-                }
-                
-                // 转换Legado语法到标准CSS
-                selector = this.convertLegadoSelector(selector);
-                
-                return { selector, attr, filterRegex };
+            setContent(content, baseUrl = '') {
+                this.content = content;
+                this.baseUrl = baseUrl;
+                return this;
             }
             
-            // 转换Legado选择器语法
-            convertLegadoSelector(sel) {
-                if (!sel) return sel;
+            // 获取元素列表
+            getElements(rule) {
+                if (!rule) return [];
                 
-                // @js: 开头的JS规则暂不支持，返回空
-                if (sel.startsWith('@js:') || sel.startsWith('js:')) {
-                    return null;
+                const rules = this.splitRule(rule);
+                let currentList = [this.content].filter(c => c != null);
+                
+                for (const r of rules) {
+                    if (!r) continue;
+                    currentList = this.applyRuleForElements(r, currentList);
+                    if (currentList.length === 0) break;
                 }
                 
-                // XPath 暂时转为空
-                if (sel.startsWith('//') || sel.startsWith('./')) {
-                    return null;
-                }
-                
-                // class. -> .
-                sel = sel.replace(/^class\./, '.');
-                // id. -> #
-                sel = sel.replace(/^id\./, '#');
-                // tag. -> tag
-                sel = sel.replace(/^tag\./, '');
-                
-                // .0 -> :eq(0), .1 -> :eq(1)
-                sel = sel.replace(/\.(\d+)(?=[\.\[\:@]|$)/g, ':eq($1)');
-                
-                // @text, @html, @href 等在 parseSelector 中处理
-                
-                return sel;
+                return currentList;
             }
             
-            // 获取元素
-            selectElements(selector, context = this.doc) {
-                try {
-                    const parsed = this.parseSelector(selector);
-                    if (!parsed || !parsed.selector) return [];
-                    
-                    let elements = [];
-                    
-                    // 处理 :eq(), :first, :last
-                    let eqIndex = -1;
-                    let isFirst = false;
-                    let isLast = false;
-                    
-                    let sel = parsed.selector;
-                    
-                    if (sel.includes(':eq(')) {
-                        const match = sel.match(/:eq\((\d+)\)/);
-                        if (match) {
-                            eqIndex = parseInt(match[1]);
-                            sel = sel.replace(/:eq\(\d+\)/, '');
-                        }
+            // 获取字符串值
+            getString(rule) {
+                if (!rule) return '';
+                
+                // 处理模板变量 {{$.xxx}}
+                let processedRule = rule;
+                const templatePattern = /\{\{\$?\.([^}]+)\}\}/g;
+                let match;
+                
+                while ((match = templatePattern.exec(rule)) !== null) {
+                    const templateVar = match[0];
+                    const fieldName = match[1];
+                    const value = this.getTemplateValue(fieldName);
+                    processedRule = processedRule.replace(templateVar, value);
+                }
+                
+                if (processedRule !== rule) {
+                    return processedRule;
+                }
+                
+                // 特殊属性名直接处理
+                const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src'];
+                if (specialAttrs.includes(processedRule)) {
+                    return this.applyRuleForString(processedRule, this.content) || '';
+                }
+                
+                // 如果是Map对象，直接获取字段
+                if (this.content && typeof this.content === 'object' && !Array.isArray(this.content)) {
+                    const value = this.content[processedRule];
+                    if (value != null) {
+                        return Array.isArray(value) ? value[0]?.toString() || '' : value.toString();
                     }
-                    
-                    if (sel.includes(':first')) {
-                        isFirst = true;
-                        sel = sel.replace(':first', '');
-                    }
-                    
-                    if (sel.includes(':last')) {
-                        isLast = true;
-                        sel = sel.replace(':last', '');
-                    }
-                    
-                    sel = sel.trim();
-                    
-                    if (sel) {
-                        try {
-                            elements = Array.from(context.querySelectorAll(sel));
-                        } catch (e) {
-                            return [];
-                        }
+                }
+                
+                // 如果不包含特殊符号，直接返回
+                if (!processedRule.includes('@') && !processedRule.includes('$') && 
+                    !processedRule.includes('/') && !processedRule.includes('##')) {
+                    return processedRule;
+                }
+                
+                const rules = this.splitRule(processedRule);
+                let currentValue = this.content;
+                
+                for (const r of rules) {
+                    if (!r) continue;
+                    currentValue = this.applyRuleForString(r, currentValue);
+                    if (currentValue == null) break;
+                }
+                
+                return (currentValue?.toString() || '').trim();
+            }
+            
+            getTemplateValue(fieldName) {
+                if (this.content && typeof this.content === 'object') {
+                    const value = this.content[fieldName];
+                    return value?.toString() || '';
+                }
+                return '';
+            }
+            
+            // 分割规则 (@@分隔符)
+            splitRule(rule) {
+                const result = [];
+                let current = '';
+                let i = 0;
+                
+                while (i < rule.length) {
+                    if (i + 1 < rule.length && rule[i] === '@' && rule[i + 1] === '@') {
+                        if (current) result.push(current);
+                        current = '';
+                        i += 2;
                     } else {
-                        elements = [context];
+                        current += rule[i];
+                        i++;
+                    }
+                }
+                
+                if (current) result.push(current);
+                return result.filter(r => r.trim());
+            }
+            
+            // 对元素列表应用规则
+            applyRuleForElements(rule, inputList) {
+                const r = rule.trim();
+                const results = [];
+                
+                for (const input of inputList) {
+                    // JS规则
+                    if (r.startsWith('<js>') || r.startsWith('@js:')) {
+                        const jsCode = r.startsWith('<js>') ? 
+                            r.replace(/^<js>/, '').replace(/<\/js>$/, '') : 
+                            r.replace(/^@js:/, '');
+                        const jsResult = this.evalJS(jsCode, input);
+                        if (Array.isArray(jsResult)) {
+                            results.push(...jsResult);
+                        } else if (jsResult != null) {
+                            results.push(jsResult);
+                        }
+                        continue;
                     }
                     
-                    if (eqIndex >= 0 && elements[eqIndex]) {
-                        elements = [elements[eqIndex]];
-                    } else if (isFirst && elements[0]) {
-                        elements = [elements[0]];
-                    } else if (isLast && elements.length) {
-                        elements = [elements[elements.length - 1]];
+                    // JSONPath规则
+                    if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) {
+                        const path = r.replace(/^@json:/, '').replace(/^\$/, '');
+                        const jsonResults = this.evalJsonPath(path, input);
+                        results.push(...jsonResults);
+                        continue;
                     }
                     
-                    return elements;
+                    // XPath规则
+                    if (r.startsWith('//') || r.startsWith('@xpath:')) {
+                        const xpath = r.replace(/^@xpath:/, '');
+                        const xpathResults = this.evalXPath(xpath, input);
+                        results.push(...xpathResults);
+                        continue;
+                    }
+                    
+                    // 正则规则
+                    if (r.startsWith('@regex:') || r.startsWith(':')) {
+                        const regex = r.replace(/^@regex:/, '').replace(/^:/, '');
+                        const regexResults = this.evalRegexList(regex, input);
+                        results.push(...regexResults);
+                        continue;
+                    }
+                    
+                    // CSS规则
+                    if (r.startsWith('@css:')) {
+                        const css = r.replace(/^@css:/, '');
+                        const cssResults = this.evalCss(css, input);
+                        results.push(...cssResults);
+                        continue;
+                    }
+                    
+                    // Legado默认规则
+                    const legadoResults = this.evalLegado(r, input);
+                    results.push(...legadoResults);
+                }
+                
+                return results;
+            }
+            
+            // 对单个值应用规则
+            applyRuleForString(rule, input) {
+                if (input == null) return '';
+                const r = rule.trim();
+                
+                // JS规则
+                if (r.startsWith('<js>') || r.startsWith('@js:')) {
+                    const jsCode = r.startsWith('<js>') ? 
+                        r.replace(/^<js>/, '').replace(/<\/js>$/, '') : 
+                        r.replace(/^@js:/, '');
+                    return this.evalJS(jsCode, input) || '';
+                }
+                
+                // JSONPath规则
+                if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) {
+                    const path = r.replace(/^@json:/, '');
+                    return this.evalJsonPathSingle(path, input);
+                }
+                
+                // XPath规则
+                if (r.startsWith('//') || r.startsWith('@xpath:')) {
+                    const xpath = r.replace(/^@xpath:/, '');
+                    return this.evalXPathSingle(xpath, input);
+                }
+                
+                // 正则规则
+                if (r.startsWith('@regex:') || r.startsWith(':')) {
+                    const regex = r.replace(/^@regex:/, '').replace(/^:/, '');
+                    return this.evalRegexSingle(regex, input);
+                }
+                
+                // CSS规则
+                if (r.startsWith('@css:')) {
+                    const css = r.replace(/^@css:/, '');
+                    return this.evalCssSingle(css, input);
+                }
+                
+                // 特殊属性
+                const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name'];
+                if (specialAttrs.includes(r.toLowerCase())) {
+                    return this.getAttribute(input, r.toLowerCase());
+                }
+                
+                // 多级@规则
+                if ((r.match(/@/g) || []).length > 1) {
+                    return this.applyMultiAtRule(r, input);
+                }
+                
+                // 属性提取
+                const { selector, attr } = this.parseSelectorAndAttr(r);
+                if (attr) {
+                    return this.extractAttribute(selector, attr, input);
+                }
+                
+                // Legado默认规则
+                return this.evalLegadoSingle(r, input);
+            }
+            
+            // 解析选择器和属性
+            parseSelectorAndAttr(rule) {
+                const attrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name', 'onclick'];
+                
+                const lastAtIndex = rule.lastIndexOf('@');
+                if (lastAtIndex > 0) {
+                    const possibleAttr = rule.substring(lastAtIndex + 1).toLowerCase();
+                    if (attrs.includes(possibleAttr) || possibleAttr.startsWith('data-')) {
+                        return { selector: rule.substring(0, lastAtIndex), attr: possibleAttr };
+                    }
+                }
+                
+                return { selector: rule, attr: null };
+            }
+            
+            // 多级@规则
+            applyMultiAtRule(rule, input) {
+                const parts = rule.split('@');
+                let current = input;
+                let currentElements = null;
+                
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i].trim();
+                    if (!part) continue;
+                    
+                    const isLast = i === parts.length - 1;
+                    const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src'];
+                    
+                    if (isLast && specialAttrs.includes(part.toLowerCase())) {
+                        const elements = currentElements || [current].filter(e => e != null);
+                        const results = elements.map(el => this.getAttribute(el, part.toLowerCase())).filter(v => v);
+                        return results.join('\n');
+                    } else {
+                        const elementsToProcess = currentElements || [current].filter(e => e != null);
+                        const newElements = [];
+                        
+                        for (const el of elementsToProcess) {
+                            const selector = this.convertLegadoToSelector(part);
+                            const selected = this.selectElements(selector, el);
+                            newElements.push(...selected);
+                        }
+                        
+                        currentElements = newElements;
+                        current = newElements[0];
+                    }
+                    
+                    if (!current && (!currentElements || currentElements.length === 0)) break;
+                }
+                
+                return current?.toString() || '';
+            }
+            
+            // 提取属性
+            extractAttribute(selector, attr, input) {
+                const elements = this.selectElements(this.convertLegadoToSelector(selector), input);
+                
+                for (const el of elements) {
+                    const value = this.getAttribute(el, attr);
+                    if (value) return value;
+                }
+                
+                return '';
+            }
+            
+            // 选择元素
+            selectElements(selector, input) {
+                if (!input) return [];
+                
+                // 如果是数组
+                if (Array.isArray(input)) {
+                    return input;
+                }
+                
+                // 如果是字符串，解析为HTML
+                let element = input;
+                if (typeof input === 'string') {
+                    if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
+                        return [input]; // JSON字符串
+                    }
+                    element = new DOMParser().parseFromString(input, 'text/html');
+                }
+                
+                // 处理索引选择器
+                const indexPattern = /^(.+?)(?::eq\((\d+)\)|\.(\d+)|\.(-\d+))$/;
+                const match = selector.match(indexPattern);
+                
+                try {
+                    if (match) {
+                        const baseSelector = match[1];
+                        const index = parseInt(match[2] || match[3] || match[4]);
+                        
+                        const allElements = element.querySelectorAll ?
+                            Array.from(element.querySelectorAll(baseSelector)) :
+                            (element.querySelectorAll ? Array.from(element.querySelectorAll(baseSelector)) : []);
+                        
+                        if (index < 0) {
+                            return allElements.length + index >= 0 ? [allElements[allElements.length + index]] : [];
+                        }
+                        return index < allElements.length ? [allElements[index]] : [];
+                    }
+                    
+                    const convertedSelector = this.convertLegadoToSelector(selector);
+                    return element.querySelectorAll ? Array.from(element.querySelectorAll(convertedSelector)) : [];
                 } catch (e) {
                     return [];
                 }
             }
             
-            // 获取单个元素
-            selectElement(selector, context = this.doc) {
-                const elements = this.selectElements(selector, context);
-                return elements[0] || null;
-            }
-            
-            // 获取字符串值
-            getString(selector, context = this.doc) {
-                const parsed = this.parseSelector(selector);
-                if (!parsed) return '';
-                
-                const element = this.selectElement(parsed.selector, context);
+            // 获取属性
+            getAttribute(element, attr) {
                 if (!element) return '';
                 
-                let value = '';
-                
-                // 获取值
-                if (parsed.attr === 'text') {
-                    value = element.textContent || '';
-                } else if (parsed.attr === 'html') {
-                    value = element.innerHTML || '';
-                } else if (parsed.attr === 'href' || parsed.attr === 'src') {
-                    value = element.getAttribute(parsed.attr) || '';
-                    // 处理相对路径
-                    if (value && !value.startsWith('http')) {
-                        try {
-                            value = new URL(value, this.doc.baseURI || window.location.href).href;
-                        } catch (e) {}
-                    }
-                } else if (parsed.attr.startsWith('attr:')) {
-                    const attrName = parsed.attr.substring(5);
-                    value = element.getAttribute(attrName) || '';
-                } else if (element.getAttribute) {
-                    value = element.getAttribute(parsed.attr) || element.textContent || '';
-                } else {
-                    value = element.textContent || '';
+                if (typeof element === 'string') {
+                    return element;
                 }
                 
-                // 应用正则过滤
-                if (parsed.filterRegex && value) {
-                    try {
-                        // 简单的正则替换
-                        const parts = parsed.filterRegex.split('##');
-                        if (parts.length === 2) {
-                            const pattern = parts[0];
-                            const replacement = parts[1];
-                            value = value.replace(new RegExp(pattern, 'g'), replacement);
-                        } else {
-                            // 提取匹配
-                            const match = value.match(new RegExp(parsed.filterRegex));
-                            if (match) value = match[1] || match[0];
+                switch (attr.toLowerCase()) {
+                    case 'text':
+                    case 'text()':
+                        return element.textContent || '';
+                    case 'html':
+                    case 'html()':
+                        return element.innerHTML || '';
+                    case 'ownText':
+                        return element.childNodes ? 
+                            Array.from(element.childNodes)
+                                .filter(n => n.nodeType === 3)
+                                .map(n => n.textContent)
+                                .join('') : '';
+                    case 'href':
+                        return element.getAttribute?.('href') || '';
+                    case 'src':
+                        return element.getAttribute?.('src') || '';
+                    case 'data-src':
+                        return element.getAttribute?.('data-src') || '';
+                    case 'content':
+                        return element.getAttribute?.('content') || '';
+                    case 'alt':
+                        return element.getAttribute?.('alt') || '';
+                    case 'title':
+                        return element.getAttribute?.('title') || '';
+                    case 'value':
+                        return element.getAttribute?.('value') || element.value || '';
+                    case 'name':
+                        return element.getAttribute?.('name') || '';
+                    default:
+                        return element.getAttribute?.(attr) || '';
+                }
+            }
+            
+            // 转换Legado选择器
+            convertLegadoToSelector(rule) {
+                let sel = rule.trim();
+                
+                // 处理##分隔符
+                if (sel.includes('##')) sel = sel.split('##')[0];
+                // 处理&&分隔符
+                if (sel.includes('&&')) sel = sel.split('&&')[0];
+                
+                // 处理@子元素选择器
+                const attrNames = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name'];
+                if (sel.includes('@')) {
+                    const parts = sel.split('@');
+                    if (parts.length === 2) {
+                        const afterAt = parts[1].toLowerCase();
+                        if (!attrNames.includes(afterAt) && !afterAt.startsWith('data-') && !afterAt.startsWith('js:')) {
+                            sel = parts[0] + ' ' + parts[1];
+                            return sel;
                         }
+                    }
+                }
+                
+                // Legado特殊选择器转换
+                if (sel.startsWith('class.')) sel = '.' + sel.substring(6);
+                if (sel.startsWith('id.')) sel = '#' + sel.substring(3);
+                if (sel.startsWith('tag.')) sel = sel.substring(4);
+                if (sel.startsWith('text.')) sel = `:contains(${sel.substring(5)})`;
+                
+                // 处理索引
+                sel = sel.replace(/\.(\d+)$/g, ':eq($1)');
+                sel = sel.replace(/\.(-\d+)$/g, ':eq($1)');
+                
+                return sel;
+            }
+            
+            // Legado规则解析（元素列表）
+            evalLegado(rule, input) {
+                const results = [];
+                const selector = this.convertLegadoToSelector(rule);
+                
+                try {
+                    if (typeof input === 'string') {
+                        if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
+                            // JSON
+                            try {
+                                const json = JSON.parse(input);
+                                const jsonResult = this.getJsonValue(json, rule);
+                                if (Array.isArray(jsonResult)) {
+                                    results.push(...jsonResult);
+                                } else if (jsonResult != null) {
+                                    results.push(jsonResult);
+                                }
+                            } catch (e) {}
+                        } else {
+                            // HTML
+                            const doc = new DOMParser().parseFromString(input, 'text/html');
+                            results.push(...Array.from(doc.querySelectorAll(selector)));
+                        }
+                    } else if (input.querySelectorAll) {
+                        results.push(...Array.from(input.querySelectorAll(selector)));
+                    } else if (typeof input === 'object') {
+                        // JSON对象
+                        const jsonResult = this.getJsonValue(input, rule);
+                        if (Array.isArray(jsonResult)) {
+                            results.push(...jsonResult);
+                        } else if (jsonResult != null) {
+                            results.push(jsonResult);
+                        }
+                    }
+                } catch (e) {}
+                
+                return results;
+            }
+            
+            // Legado规则解析（单个值）
+            evalLegadoSingle(rule, input) {
+                // 处理##分隔符
+                const parts = rule.split('##');
+                let selector = parts[0];
+                const replaceRegex = parts[1];
+                const replacement = parts[2] || '';
+                
+                // 分离属性
+                let attr = null;
+                if (selector.includes('@')) {
+                    const attrParts = selector.split('@');
+                    if (attrParts.length === 2) {
+                        selector = attrParts[0];
+                        attr = attrParts[1];
+                    }
+                }
+                
+                const cssSelector = this.convertLegadoToSelector(selector);
+                let result = '';
+                
+                try {
+                    if (typeof input === 'string') {
+                        if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
+                            // JSON
+                            try {
+                                const json = JSON.parse(input);
+                                result = this.getJsonValue(json, selector)?.toString() || '';
+                            } catch (e) {
+                                const doc = new DOMParser().parseFromString(input, 'text/html');
+                                const el = cssSelector ? doc.querySelector(cssSelector) : doc.body;
+                                result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : '';
+                            }
+                        } else {
+                            // HTML
+                            const doc = new DOMParser().parseFromString(input, 'text/html');
+                            const el = cssSelector ? doc.querySelector(cssSelector) : doc.body;
+                            result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : '';
+                        }
+                    } else if (input?.querySelector) {
+                        const el = cssSelector ? input.querySelector(cssSelector) : input;
+                        result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : '';
+                    } else if (typeof input === 'object') {
+                        result = this.getJsonValue(input, selector)?.toString() || '';
+                    }
+                } catch (e) {}
+                
+                // 应用正则替换
+                if (replaceRegex) {
+                    try {
+                        result = result.replace(new RegExp(replaceRegex, 'g'), replacement);
                     } catch (e) {}
                 }
                 
-                return value.trim();
+                return result.trim();
             }
             
-            // 获取列表
-            getList(listSelector, itemRules, context = this.doc) {
-                const items = [];
-                const elements = this.selectElements(listSelector, context);
+            // 获取JSON值
+            getJsonValue(json, path) {
+                if (!path || path === '.') return json;
                 
-                elements.forEach(el => {
-                    const item = {};
-                    for (const [key, rule] of Object.entries(itemRules)) {
-                        if (typeof rule === 'string') {
-                            item[key] = this.getString(rule, el);
+                const keys = path.replace(/^\$?\.?/, '').split('.');
+                let current = json;
+                
+                for (const key of keys) {
+                    if (current == null) return null;
+                    
+                    // 处理数组索引
+                    const arrayMatch = key.match(/^(\w+)\[(\d+)\]$/);
+                    if (arrayMatch) {
+                        const arrKey = arrayMatch[1];
+                        const index = parseInt(arrayMatch[2]);
+                        current = current[arrKey];
+                        if (Array.isArray(current)) {
+                            current = current[index];
                         }
+                    } else if (Array.isArray(current)) {
+                        current = current.map(item => item?.[key]);
+                    } else {
+                        current = current?.[key];
                     }
-                    items.push(item);
-                });
+                }
                 
-                return items;
+                return current;
+            }
+            
+            // JSONPath解析
+            evalJsonPath(path, input) {
+                const results = [];
+                try {
+                    const json = typeof input === 'string' ? JSON.parse(input) : input;
+                    const value = this.getJsonValue(json, path);
+                    if (Array.isArray(value)) {
+                        results.push(...value);
+                    } else if (value != null) {
+                        results.push(value);
+                    }
+                } catch (e) {}
+                return results;
+            }
+            
+            evalJsonPathSingle(path, input) {
+                try {
+                    const json = typeof input === 'string' ? JSON.parse(input) : input;
+                    return this.getJsonValue(json, path)?.toString() || '';
+                } catch (e) {
+                    return '';
+                }
+            }
+            
+            // XPath解析（简化为CSS）
+            evalXPath(xpath, input) {
+                return this.evalCss(this.xpathToCss(xpath), input);
+            }
+            
+            evalXPathSingle(xpath, input) {
+                return this.evalCssSingle(this.xpathToCss(xpath), input);
+            }
+            
+            xpathToCss(xpath) {
+                let css = xpath.replace(/^\/\//, '');
+                css = css.replace(/\/@[\w]+$/, '');
+                css = css.replace(/\//g, ' > ');
+                css = css.replace(/\[@class=['"]([^'"]+)['"]\]/g, '.$1');
+                css = css.replace(/\[@id=['"]([^'"]+)['"]\]/g, '#$1');
+                css = css.replace(/\[@(\w+)=['"]([^'"]+)['"]\]/g, '[$1="$2"]');
+                return css;
+            }
+            
+            // CSS解析
+            evalCss(css, input) {
+                const results = [];
+                try {
+                    if (typeof input === 'string') {
+                        const doc = new DOMParser().parseFromString(input, 'text/html');
+                        results.push(...Array.from(doc.querySelectorAll(css)));
+                    } else if (input?.querySelectorAll) {
+                        results.push(...Array.from(input.querySelectorAll(css)));
+                    }
+                } catch (e) {}
+                return results;
+            }
+            
+            evalCssSingle(css, input) {
+                try {
+                    if (typeof input === 'string') {
+                        const doc = new DOMParser().parseFromString(input, 'text/html');
+                        return doc.querySelector(css)?.textContent || '';
+                    } else if (input?.querySelector) {
+                        return input.querySelector(css)?.textContent || '';
+                    }
+                } catch (e) {}
+                return '';
+            }
+            
+            // 正则解析
+            evalRegexList(regex, input) {
+                try {
+                    const p = new RegExp(regex);
+                    const m = p.exec(input?.toString() || '');
+                    if (m) {
+                        return m.slice(1).filter(g => g != null);
+                    }
+                } catch (e) {}
+                return [];
+            }
+            
+            evalRegexSingle(regex, input) {
+                try {
+                    const m = new RegExp(regex).exec(input?.toString() || '');
+                    if (m) {
+                        return m[1] || m[0] || '';
+                    }
+                } catch (e) {}
+                return '';
+            }
+            
+            // JS执行（简化版）
+            evalJS(code, input) {
+                try {
+                    const func = new Function('result', 'src', 'baseUrl', 'java', code);
+                    return func(input, this.content, this.baseUrl, {
+                        log: console.log,
+                        get: (url) => fetchHtmlSync(url),
+                        post: (url, body) => fetchPostSync(url, body)
+                    });
+                } catch (e) {
+                    console.error('JS执行错误:', e);
+                    return null;
+                }
             }
         }
         
         // ========== HTTP请求 ==========
-        async function fetchHtml(url) {
+        async function fetchHtml(url, headers = {}) {
+            const defaultHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Cache-Control': 'max-age=0',
+                'Connection': 'keep-alive'
+            };
+            
             try {
-                // 使用代理绕过CORS
+                // 使用CORS代理
                 const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
+                const response = await fetch(proxyUrl, { headers: defaultHeaders });
                 const data = await response.json();
-                return data.contents || '';
+                return { 
+                    content: data.contents || '', 
+                    success: !!data.contents,
+                    url: url
+                };
             } catch (e) {
-                throw new Error('请求失败: ' + e.message);
+                return { content: '', success: false, error: e.message, url: url };
             }
         }
         
@@ -596,6 +1079,7 @@
         let chapters = [];
         let downloadedContent = '';
         let downloadHistory = JSON.parse(localStorage.getItem('novelHistory') || '[]');
+        let sourceTestResults = {};
         
         // 初始化
         function init() {
@@ -607,58 +1091,14 @@
         function loadSources() {
             const saved = localStorage.getItem('bookSources');
             if (saved) {
-                bookSources = JSON.parse(saved);
-            } else {
-                // 默认书源
-                bookSources = getDefaultSources();
-                saveSources();
+                try {
+                    bookSources = JSON.parse(saved);
+                } catch (e) {
+                    bookSources = [];
+                }
             }
             updateSourceCount();
             renderSourceList();
-        }
-        
-        function getDefaultSources() {
-            return [
-                {
-                    bookSourceName: "笔趣阁",
-                    bookSourceUrl: "https://www.biquge.com",
-                    searchUrl: "/search.php?keyword={{key}}",
-                    enabled: true,
-                    ruleSearch: {
-                        bookList: ".result-list .result-item",
-                        name: ".result-game-item-title a",
-                        author: ".result-game-item-info-tag:eq(0) span",
-                        bookUrl: ".result-game-item-title a@href",
-                        coverUrl: ".result-game-item-pic img@src",
-                        intro: ".result-game-item-desc"
-                    },
-                    ruleBookInfo: {
-                        name: "#info h1",
-                        author: "#info p:eq(0)",
-                        intro: "#intro p",
-                        coverUrl: "#fmimg img@src"
-                    },
-                    ruleToc: {
-                        chapterList: "#list dl dd a",
-                        chapterName: "text",
-                        chapterUrl: "href"
-                    },
-                    ruleContent: {
-                        content: "#content"
-                    }
-                },
-                {
-                    bookSourceName: "贼吧网",
-                    bookSourceUrl: "https://m.zei8.vip",
-                    searchUrl: "/search.php?keyword={{key}}",
-                    enabled: true,
-                    ruleSearch: {
-                        bookList: ".list-item",
-                        name: "a",
-                        bookUrl: "a@href"
-                    }
-                }
-            ];
         }
         
         function saveSources() {
@@ -669,6 +1109,7 @@
         
         function updateSourceCount() {
             document.getElementById('sourceCount').textContent = bookSources.length;
+            document.getElementById('enabledCount').textContent = bookSources.filter(s => s.enabled !== false).length;
         }
         
         function updateSourceSelect() {
@@ -711,13 +1152,14 @@
                 return;
             }
             list.innerHTML = bookSources.map((s, i) => `
-                <div class="source-item">
+                <div class="source-item ${s.enabled === false ? 'disabled' : ''}">
                     <div>
                         <div class="name">${s.bookSourceName}</div>
                         <div class="url">${s.bookSourceUrl}</div>
                     </div>
                     <div class="btn-group">
                         <button class="btn btn-small ${s.enabled !== false ? 'btn-success' : 'btn-secondary'}" onclick="toggleSource(${i})">${s.enabled !== false ? '✓' : '✗'}</button>
+                        <button class="btn btn-secondary btn-small" onclick="testSource(${i})">测试</button>
                         <button class="btn btn-danger btn-small" onclick="deleteSource(${i})">删除</button>
                     </div>
                 </div>
@@ -735,20 +1177,30 @@
                 const data = JSON.parse(input);
                 const sources = Array.isArray(data) ? data : [data];
                 let added = 0;
+                let updated = 0;
                 
                 sources.forEach(s => {
-                    if (s.bookSourceName && s.bookSourceUrl) {
-                        if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) {
-                            bookSources.push({ ...s, enabled: true });
-                            added++;
-                        }
+                    if (!s.bookSourceName || !s.bookSourceUrl) return;
+                    
+                    const existingIndex = bookSources.findIndex(
+                        existing => existing.bookSourceUrl === s.bookSourceUrl
+                    );
+                    
+                    if (existingIndex >= 0) {
+                        // 更新现有书源
+                        bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: true };
+                        updated++;
+                    } else {
+                        // 添加新书源
+                        bookSources.push({ ...s, enabled: true });
+                        added++;
                     }
                 });
                 
                 saveSources();
                 renderSourceList();
                 document.getElementById('sourceInput').value = '';
-                showToast(`成功导入 ${added} 个书源`);
+                showToast(`成功导入 ${added} 个，更新 ${updated} 个书源`);
             } catch (e) {
                 showToast('JSON格式错误: ' + e.message, true);
             }
@@ -771,6 +1223,7 @@
             if (!url) return;
             
             try {
+                showToast('正在获取书源...');
                 const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
                 const data = await response.json();
                 document.getElementById('sourceInput').value = data.contents;
@@ -781,7 +1234,7 @@
         }
         
         function toggleSource(index) {
-            bookSources[index].enabled = !bookSources[index].enabled;
+            bookSources[index].enabled = bookSources[index].enabled === false ? true : false;
             saveSources();
             renderSourceList();
         }
@@ -795,8 +1248,92 @@
             }
         }
         
+        async function testSource(index) {
+            const source = bookSources[index];
+            showToast(`正在测试 ${source.bookSourceName}...`);
+            
+            try {
+                const searchUrl = (source.searchUrl || '')
+                    .replace('{{key}}', '斗罗')
+                    .replace('{{page}}', '1');
+                
+                const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
+                
+                const result = await fetchHtml(fullUrl);
+                
+                if (result.success) {
+                    const rule = source.ruleSearch || {};
+                    const parser = new AnalyzeRule().setContent(result.content, result.url);
+                    const items = parser.getElements(rule.bookList);
+                    
+                    if (items.length > 0) {
+                        showToast(`${source.bookSourceName} 测试成功，找到 ${items.length} 个结果`);
+                        sourceTestResults[source.bookSourceUrl] = true;
+                    } else {
+                        showToast(`${source.bookSourceName} 未找到结果`, true);
+                        sourceTestResults[source.bookSourceUrl] = false;
+                    }
+                } else {
+                    showToast(`${source.bookSourceName} 请求失败`, true);
+                    sourceTestResults[source.bookSourceUrl] = false;
+                }
+            } catch (e) {
+                showToast(`${source.bookSourceName} 测试失败: ${e.message}`, true);
+                sourceTestResults[source.bookSourceUrl] = false;
+            }
+        }
+        
+        async function testAllSources() {
+            showToast('开始测试所有书源...');
+            
+            for (let i = 0; i < bookSources.length; i++) {
+                await testSource(i);
+            }
+            
+            // 删除失败的书源
+            const failedCount = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] === false).length;
+            
+            if (failedCount > 0 && confirm(`发现 ${failedCount} 个无效书源，是否删除？`)) {
+                bookSources = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] !== false);
+                saveSources();
+                renderSourceList();
+                showToast(`已删除 ${failedCount} 个无效书源`);
+            }
+        }
+        
         function loadDefaultSources() {
-            const defaults = getDefaultSources();
+            // 从本地文件加载默认书源
+            const defaults = [
+                {
+                    bookSourceName: "笔趣阁",
+                    bookSourceUrl: "https://www.biquge.com",
+                    searchUrl: "/search.php?keyword={{key}}",
+                    enabled: true,
+                    ruleSearch: {
+                        bookList: ".result-list .result-item",
+                        name: ".result-game-item-title a",
+                        author: ".result-game-item-info-tag:eq(0) span",
+                        bookUrl: ".result-game-item-title a@href",
+                        coverUrl: ".result-game-item-pic img@src",
+                        intro: ".result-game-item-desc"
+                    },
+                    ruleBookInfo: {
+                        name: "#info h1",
+                        author: "#info p:eq(0)",
+                        intro: "#intro p",
+                        coverUrl: "#fmimg img@src"
+                    },
+                    ruleToc: {
+                        chapterList: "#list dl dd a",
+                        chapterName: "text",
+                        chapterUrl: "href"
+                    },
+                    ruleContent: {
+                        content: "#content"
+                    }
+                }
+            ];
+            
             let added = 0;
             defaults.forEach(s => {
                 if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) {
@@ -804,6 +1341,7 @@
                     added++;
                 }
             });
+            
             saveSources();
             renderSourceList();
             showToast(`已加载 ${added} 个默认书源`);
@@ -819,7 +1357,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'book_sources.json';
+            a.download = 'book_sources_' + new Date().toISOString().slice(0,10) + '.json';
             a.click();
             URL.revokeObjectURL(url);
             showToast('已导出');
@@ -855,48 +1393,96 @@
             const sourceIdx = document.getElementById('sourceSelect').value;
             const sourcesToSearch = sourceIdx !== '' ? [enabledSources[parseInt(sourceIdx)]] : enabledSources;
             
-            for (const source of sourcesToSearch) {
+            // 显示搜索状态
+            const statusDiv = document.getElementById('searchStatus');
+            statusDiv.classList.remove('hidden');
+            statusDiv.innerHTML = sourcesToSearch.map(s => 
+                `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`
+            ).join('');
+            
+            // 并发搜索所有书源
+            const searchPromises = sourcesToSearch.map(async (source) => {
+                const statusId = `status-${source.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const statusEl = document.getElementById(statusId);
+                
                 try {
-                    const searchUrl = source.searchUrl
+                    statusEl.className = 'source-status loading';
+                    statusEl.textContent = `${source.bookSourceName}: 搜索中...`;
+                    
+                    const searchUrl = (source.searchUrl || '')
                         .replace('{{key}}', encodeURIComponent(keyword))
                         .replace('{{page}}', '1');
                     
                     const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
                     
-                    const html = await fetchHtml(fullUrl);
-                    const parser = new RuleParser(html);
+                    const result = await fetchHtml(fullUrl);
                     
-                    const rules = source.ruleSearch || {};
-                    const items = parser.getList(rules.bookList, {
-                        name: rules.name || 'a',
-                        author: rules.author || '',
-                        bookUrl: rules.bookUrl || 'a@href',
-                        coverUrl: rules.coverUrl || '',
-                        intro: rules.intro || ''
-                    });
+                    if (!result.success) {
+                        statusEl.className = 'source-status error';
+                        statusEl.textContent = `${source.bookSourceName}: 请求失败`;
+                        return [];
+                    }
                     
-                    items.forEach(item => {
-                        if (item.name && item.bookUrl) {
-                            // 处理相对URL
-                            if (!item.bookUrl.startsWith('http')) {
-                                item.bookUrl = source.bookSourceUrl + item.bookUrl;
-                            }
-                            if (item.coverUrl && !item.coverUrl.startsWith('http')) {
-                                item.coverUrl = source.bookSourceUrl + item.coverUrl;
-                            }
-                            item.sourceName = source.bookSourceName;
-                            item.sourceUrl = source.bookSourceUrl;
-                            item.source = source;
-                            searchResults.push(item);
+                    const rule = source.ruleSearch || {};
+                    const parser = new AnalyzeRule().setContent(result.content, result.url);
+                    const items = parser.getElements(rule.bookList);
+                    
+                    const books = items.map(item => {
+                        const r = new AnalyzeRule().setContent(item, result.url);
+                        
+                        const name = r.getString(rule.name);
+                        if (!name) return null;
+                        
+                        let bookUrl = r.getString(rule.bookUrl);
+                        if (bookUrl && !bookUrl.startsWith('http')) {
+                            bookUrl = resolveUrl(source.bookSourceUrl, bookUrl);
                         }
-                    });
+                        
+                        return {
+                            name: name,
+                            author: r.getString(rule.author),
+                            bookUrl: bookUrl,
+                            coverUrl: (() => {
+                                const cover = r.getString(rule.coverUrl);
+                                if (cover && !cover.startsWith('http')) {
+                                    return resolveUrl(source.bookSourceUrl, cover);
+                                }
+                                return cover;
+                            })(),
+                            intro: r.getString(rule.intro),
+                            kind: r.getString(rule.kind),
+                            lastChapter: r.getString(rule.lastChapter),
+                            sourceName: source.bookSourceName,
+                            sourceUrl: source.bookSourceUrl,
+                            source: source
+                        };
+                    }).filter(b => b && b.name && b.bookUrl);
+                    
+                    statusEl.className = 'source-status success';
+                    statusEl.textContent = `${source.bookSourceName}: ${books.length}个`;
+                    
+                    return books;
                 } catch (err) {
-                    console.error(`搜索 ${source.bookSourceName} 失败:`, err);
+                    statusEl.className = 'source-status error';
+                    statusEl.textContent = `${source.bookSourceName}: ${err.message}`;
+                    return [];
                 }
-            }
+            });
+            
+            const allResults = await Promise.all(searchPromises);
+            searchResults = allResults.flat();
+            
+            // 去重
+            const seen = new Set();
+            searchResults = searchResults.filter(book => {
+                const key = `${book.name}-${book.author}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
             
             if (searchResults.length > 0) {
-                displayResults(searchResults.slice(0, 30));
+                displayResults(searchResults.slice(0, 50));
                 showToast(`找到 ${searchResults.length} 个结果`);
             } else {
                 showToast('未找到结果', true);
@@ -906,6 +1492,26 @@
             btn.textContent = '搜索';
         });
         
+        function resolveUrl(base, relative) {
+            if (!relative) return '';
+            if (relative.startsWith('http')) return relative;
+            if (relative.startsWith('//')) return 'https:' + relative;
+            if (relative.startsWith('/')) {
+                try {
+                    const url = new URL(base);
+                    return url.origin + relative;
+                } catch (e) {
+                    return relative;
+                }
+            }
+            
+            try {
+                return new URL(relative, base).href;
+            } catch (e) {
+                return relative;
+            }
+        }
+        
         function displayResults(results) {
             const list = document.getElementById('bookList');
             document.getElementById('resultCount').textContent = `(${results.length})`;
@@ -913,8 +1519,9 @@
             list.innerHTML = results.map((book, i) => `
                 <div class="book-item" onclick="selectBook(${i})">
                     <h3>《${book.name}》</h3>
-                    <div class="meta">${book.author ? '作者: ' + book.author + ' | ' : ''}来源: ${book.sourceName}</div>
+                    <div class="meta">${book.author ? '作者: ' + book.author + ' | ' : ''}来源: ${book.sourceName}${book.kind ? ' | ' + book.kind : ''}</div>
                     ${book.intro ? `<div class="intro">${book.intro}</div>` : ''}
+                    ${book.lastChapter ? `<div class="meta" style="margin-top:4px">最新: ${book.lastChapter}</div>` : ''}
                 </div>
             `).join('');
             
@@ -940,47 +1547,69 @@
             document.getElementById('chapterListSection').classList.add('hidden');
             document.getElementById('downloadActions').classList.add('hidden');
             
-            // 获取书籍详情和目录
             try {
-                const html = await fetchHtml(selectedBook.bookUrl);
-                const parser = new RuleParser(html);
+                // 获取书籍详情
+                const bookResult = await fetchHtml(selectedBook.bookUrl);
                 
-                // 解析书籍信息
-                const infoRules = selectedSource.ruleBookInfo || {};
-                const bookInfo = {
-                    name: parser.getString(infoRules.name) || selectedBook.name,
-                    author: parser.getString(infoRules.author) || selectedBook.author,
-                    intro: parser.getString(infoRules.intro) || '',
-                    coverUrl: parser.getString(infoRules.coverUrl) || selectedBook.coverUrl
-                };
+                if (bookResult.success && selectedSource.ruleBookInfo) {
+                    const infoRules = selectedSource.ruleBookInfo;
+                    const parser = new AnalyzeRule().setContent(bookResult.content, bookResult.url);
+                    
+                    if (!selectedBook.author) {
+                        selectedBook.author = parser.getString(infoRules.author);
+                    }
+                    selectedBook.intro = parser.getString(infoRules.intro) || selectedBook.intro;
+                    
+                    let tocUrl = parser.getString(infoRules.tocUrl);
+                    if (tocUrl && !tocUrl.startsWith('http')) {
+                        tocUrl = resolveUrl(selectedSource.bookSourceUrl, tocUrl);
+                    }
+                    selectedBook.tocUrl = tocUrl || selectedBook.bookUrl;
+                } else {
+                    selectedBook.tocUrl = selectedBook.bookUrl;
+                }
                 
-                // 解析目录
-                const tocRules = selectedSource.ruleToc || {};
-                chapters = parser.getList(tocRules.chapterList, {
-                    name: tocRules.chapterName || 'text',
-                    url: tocRules.chapterUrl || 'href'
-                });
-                
-                // 处理章节URL
-                chapters = chapters.map(ch => ({
-                    name: ch.name,
-                    url: ch.url.startsWith('http') ? ch.url : selectedSource.bookSourceUrl + ch.url,
-                    selected: false
-                }));
+                // 获取章节列表
+                chapters = [];
+                if (selectedSource.ruleToc) {
+                    const tocResult = await fetchHtml(selectedBook.tocUrl);
+                    
+                    if (tocResult.success) {
+                        const tocRules = selectedSource.ruleToc;
+                        const parser = new AnalyzeRule().setContent(tocResult.content, tocResult.url);
+                        const items = parser.getElements(tocRules.chapterList);
+                        
+                        chapters = items.map((item, idx) => {
+                            const r = new AnalyzeRule().setContent(item, tocResult.url);
+                            
+                            let chapterUrl = r.getString(tocRules.chapterUrl);
+                            if (chapterUrl && !chapterUrl.startsWith('http')) {
+                                chapterUrl = resolveUrl(selectedBook.tocUrl, chapterUrl);
+                            }
+                            
+                            return {
+                                name: r.getString(tocRules.chapterName),
+                                url: chapterUrl,
+                                selected: false
+                            };
+                        }).filter(ch => ch.name && ch.url);
+                    }
+                }
                 
                 document.getElementById('bookLoading').classList.add('hidden');
                 
                 document.getElementById('bookInfo').innerHTML = `
-                    <h3>《${bookInfo.name}》</h3>
-                    <p style="color:rgba(255,255,255,0.6);margin-top:4px">${bookInfo.author ? '作者: ' + bookInfo.author : ''}</p>
-                    ${bookInfo.intro ? `<p style="color:rgba(255,255,255,0.5);margin-top:8px;font-size:0.85rem">${bookInfo.intro.substring(0, 200)}...</p>` : ''}
+                    <h3>《${selectedBook.name}》</h3>
+                    <p style="color:rgba(255,255,255,0.6);margin-top:4px">${selectedBook.author ? '作者: ' + selectedBook.author : ''}</p>
+                    ${selectedBook.intro ? `<p style="color:rgba(255,255,255,0.5);margin-top:8px;font-size:0.85rem">${selectedBook.intro.substring(0, 200)}${selectedBook.intro.length > 200 ? '...' : ''}</p>` : ''}
                 `;
                 
                 if (chapters.length > 0) {
                     document.getElementById('chapterCount').textContent = `(${chapters.length})`;
                     document.getElementById('chapterList').innerHTML = chapters.map((ch, i) => `
-                        <div class="chapter-item" onclick="toggleChapter(${i})" id="ch${i}">
-                            ${ch.name}
+                        <div class="chapter-item" onclick="toggleChapter(${i})">
+                            <input type="checkbox" id="ch${i}" ${ch.selected ? 'checked' : ''}>
+                            <label for="ch${i}">${ch.name}</label>
                         </div>
                     `).join('');
                     document.getElementById('chapterListSection').classList.remove('hidden');
@@ -997,7 +1626,21 @@
         
         function toggleChapter(index) {
             chapters[index].selected = !chapters[index].selected;
-            document.getElementById('ch' + index).style.background = chapters[index].selected ? 'rgba(233, 69, 96, 0.3)' : '';
+            document.getElementById('ch' + index).checked = chapters[index].selected;
+        }
+        
+        function selectAllChapters() {
+            chapters.forEach((ch, i) => {
+                ch.selected = true;
+                document.getElementById('ch' + i).checked = true;
+            });
+        }
+        
+        function deselectAllChapters() {
+            chapters.forEach((ch, i) => {
+                ch.selected = false;
+                document.getElementById('ch' + i).checked = false;
+            });
         }
         
         // ========== 下载 ==========
@@ -1012,7 +1655,7 @@
         }
         
         async function downloadAll() {
-            const toDownload = chapters.slice(0, 200); // 限制200章
+            const toDownload = chapters.slice(0, 500); // 限制500章
             await downloadChapters(toDownload);
         }
         
@@ -1021,14 +1664,16 @@
             document.getElementById('downloadProgressFill').style.width = '0%';
             document.getElementById('downloadProgressText').textContent = '准备下载...';
             document.getElementById('saveActions').classList.add('hidden');
+            document.getElementById('downloadLog').innerHTML = '';
             downloadedContent = '';
             
             const contentRule = selectedSource.ruleContent?.content || '#content';
             
-            downloadedContent = `书名: ${selectedBook.name}\n作者: ${selectedBook.author || '未知'}\n来源: ${selectedBook.sourceName}\n下载时间: ${new Date().toLocaleString()}\n\n${'='.repeat(40)}\n\n`;
+            downloadedContent = `书名: ${selectedBook.name}\n作者: ${selectedBook.author || '未知'}\n来源: ${selectedBook.sourceName}\n下载时间: ${new Date().toLocaleString()}\n总章节: ${chapters.length}\n下载章节: ${chaptersToDownload.length}\n\n${'='.repeat(50)}\n\n`;
             
             let success = 0;
             let fail = 0;
+            const logPanel = document.getElementById('downloadLog');
             
             for (let i = 0; i < chaptersToDownload.length; i++) {
                 const ch = chaptersToDownload[i];
@@ -1036,32 +1681,46 @@
                 try {
                     document.getElementById('downloadProgressText').textContent = `下载中: ${ch.name} (${i + 1}/${chaptersToDownload.length})`;
                     
-                    const html = await fetchHtml(ch.url);
-                    const parser = new RuleParser(html);
-                    let content = parser.getString(contentRule);
+                    const result = await fetchHtml(ch.url);
                     
-                    if (content) {
-                        // 清理内容
-                        content = content.replace(/&nbsp;/g, ' ')
-                                        .replace(/<br\s*\/?>/gi, '\n')
-                                        .replace(/<[^>]+>/g, '')
-                                        .replace(/\s+/g, ' ')
-                                        .trim();
+                    if (result.success) {
+                        const parser = new AnalyzeRule().setContent(result.content, result.url);
+                        let content = parser.getString(contentRule);
                         
-                        downloadedContent += `第${i + 1}章 ${ch.name}\n\n${content}\n\n`;
-                        success++;
+                        if (content) {
+                            // 清理内容
+                            content = content
+                                .replace(/&nbsp;/g, ' ')
+                                .replace(/<br\s*\/?>/gi, '\n')
+                                .replace(/<[^>]+>/g, '')
+                                .replace(/\s+/g, ' ')
+                                .trim();
+                            
+                            downloadedContent += `第${i + 1}章 ${ch.name}\n\n${content}\n\n`;
+                            success++;
+                            
+                            logPanel.innerHTML += `<div class="log-item log-success">✓ ${ch.name}</div>`;
+                        } else {
+                            fail++;
+                            logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: 内容为空</div>`;
+                        }
                     } else {
                         fail++;
+                        logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: 请求失败</div>`;
                     }
                 } catch (e) {
                     fail++;
+                    logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: ${e.message}</div>`;
                 }
                 
                 const progress = Math.round((i + 1) / chaptersToDownload.length * 100);
                 document.getElementById('downloadProgressFill').style.width = progress + '%';
                 
+                // 滚动日志
+                logPanel.scrollTop = logPanel.scrollHeight;
+                
                 // 延迟避免请求过快
-                await new Promise(r => setTimeout(r, 300));
+                await new Promise(r => setTimeout(r, 200));
             }
             
             document.getElementById('downloadProgressText').textContent = `下载完成！成功: ${success}, 失败: ${fail}`;
@@ -1087,7 +1746,7 @@
         async function copyToClipboard() {
             if (!downloadedContent) return showToast('没有内容', true);
             try {
-                await navigator.clipboard.writeText(downloadedContent.substring(0, 100000));
+                await navigator.clipboard.writeText(downloadedContent.substring(0, 500000));
                 showToast('已复制！');
             } catch (e) {
                 showToast('复制失败', true);
@@ -1102,12 +1761,12 @@
                 name: selectedBook.name,
                 author: selectedBook.author,
                 source: selectedBook.sourceName,
-                content: downloadedContent.substring(0, 500000),
+                content: downloadedContent.substring(0, 1000000),
                 date: new Date().toLocaleString(),
                 size: (downloadedContent.length / 1024).toFixed(1) + ' KB'
             };
             downloadHistory.unshift(item);
-            if (downloadHistory.length > 10) downloadHistory = downloadHistory.slice(0, 10);
+            if (downloadHistory.length > 20) downloadHistory = downloadHistory.slice(0, 20);
             localStorage.setItem('novelHistory', JSON.stringify(downloadHistory));
         }
         
