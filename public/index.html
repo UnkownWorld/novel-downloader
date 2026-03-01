@@ -131,7 +131,7 @@
         
         textarea {
             width: 100%;
-            height: 120px;
+            height: 100px;
             resize: vertical;
             font-family: monospace;
         }
@@ -200,7 +200,7 @@
             font-size: 0.85rem;
         }
         
-        .cache-info {
+        .storage-info {
             margin-top: 10px;
             padding: 10px;
             background: rgba(0, 184, 148, 0.1);
@@ -209,7 +209,7 @@
             border: 1px solid rgba(0, 184, 148, 0.2);
         }
         
-        .cache-info h4 { color: #00b894; margin-bottom: 5px; }
+        .storage-info h4 { color: #00b894; margin-bottom: 5px; }
         
         .settings-row {
             display: flex;
@@ -223,21 +223,15 @@
             font-size: 0.85rem;
         }
         
-        .settings-row input[type="number"] {
-            width: 80px;
-        }
-        
-        .settings-row input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-        }
+        .settings-row input[type="number"] { width: 80px; }
+        .settings-row input[type="checkbox"] { width: 18px; height: 18px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📚 小说下载器</h1>
-            <p>完整复刻Legado书源规则 | 本地缓存优化</p>
+            <p>Legado书源规则 | IndexedDB大容量存储</p>
         </div>
         
         <div class="tabs">
@@ -258,7 +252,7 @@
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
                 </form>
                 <div class="search-status hidden" id="searchStatus"></div>
-                <div class="cache-info" id="cacheInfo"></div>
+                <div class="storage-info" id="storageInfo"></div>
             </div>
             
             <div class="card hidden" id="resultsCard">
@@ -347,9 +341,14 @@
         <!-- 设置页面 -->
         <div id="settingsTab" class="hidden">
             <div class="card">
-                <h3 style="margin-bottom:15px;font-size:0.95rem">⚙️ 优化设置</h3>
+                <h3 style="margin-bottom:15px;font-size:0.95rem">⚙️ 存储设置</h3>
                 
-                <div class="settings-row">
+                <div class="storage-info" id="dbStorageInfo">
+                    <h4>IndexedDB 存储</h4>
+                    <p>使用浏览器内置数据库，容量更大（50MB-500MB）</p>
+                </div>
+                
+                <div class="settings-row" style="margin-top:15px">
                     <label>并发请求数:</label>
                     <input type="number" id="concurrentLimit" value="3" min="1" max="10">
                     <span style="font-size:0.8rem;color:rgba(255,255,255,0.5)">同时搜索的书源数量</span>
@@ -375,17 +374,11 @@
                     <label><input type="checkbox" id="enableCache" checked> 启用缓存</label>
                 </div>
                 
-                <div class="settings-row">
-                    <label><input type="checkbox" id="enableCompress" checked> 压缩存储</label>
-                </div>
-                
                 <div class="btn-group" style="margin-top:15px">
                     <button class="btn" onclick="saveSettings()">💾 保存设置</button>
-                    <button class="btn btn-secondary" onclick="clearCache()">🗑️ 清除缓存</button>
-                    <button class="btn btn-secondary" onclick="showCacheStats()">📊 缓存统计</button>
+                    <button class="btn btn-secondary" onclick="clearAllCache()">🗑️ 清除所有缓存</button>
+                    <button class="btn btn-secondary" onclick="showStorageStats()">📊 存储统计</button>
                 </div>
-                
-                <div class="cache-info" id="settingsCacheInfo"></div>
             </div>
             
             <div class="card">
@@ -418,67 +411,246 @@
         </div>
         
         <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:12px;font-size:0.75rem">
-            本地缓存优化 | 减少网络请求 | 书源来源于网络仅供学习
+            IndexedDB大容量存储 | 减少网络请求 | 书源来源于网络仅供学习
         </div>
     </div>
     
     <div class="toast" id="toast"></div>
     
     <script>
-        // ========== 缓存管理器 ==========
-        class CacheManager {
+        // ========== IndexedDB 数据库管理器 ==========
+        class DBManager {
             constructor() {
-                this.prefix = 'novel_cache_';
-                this.settings = this.loadSettings();
-                this.stats = this.loadStats();
+                this.dbName = 'NovelDownloaderDB';
+                this.dbVersion = 1;
+                this.db = null;
+                this.stores = {
+                    cache: 'requestCache',
+                    sources: 'bookSources',
+                    history: 'downloadHistory',
+                    settings: 'appSettings'
+                };
             }
             
-            loadSettings() {
-                const saved = localStorage.getItem('novel_settings');
-                return saved ? JSON.parse(saved) : {
+            // 初始化数据库
+            async init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, this.dbVersion);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        this.db = request.result;
+                        resolve(this.db);
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        
+                        // 创建缓存存储
+                        if (!db.objectStoreNames.contains(this.stores.cache)) {
+                            const cacheStore = db.createObjectStore(this.stores.cache, { keyPath: 'id' });
+                            cacheStore.createIndex('url', 'url', { unique: false });
+                            cacheStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        }
+                        
+                        // 创建书源存储
+                        if (!db.objectStoreNames.contains(this.stores.sources)) {
+                            const sourcesStore = db.createObjectStore(this.stores.sources, { keyPath: 'bookSourceUrl' });
+                            sourcesStore.createIndex('name', 'bookSourceName', { unique: false });
+                        }
+                        
+                        // 创建历史存储
+                        if (!db.objectStoreNames.contains(this.stores.history)) {
+                            const historyStore = db.createObjectStore(this.stores.history, { keyPath: 'id' });
+                            historyStore.createIndex('date', 'date', { unique: false });
+                        }
+                        
+                        // 创建设置存储
+                        if (!db.objectStoreNames.contains(this.stores.settings)) {
+                            db.createObjectStore(this.stores.settings, { keyPath: 'key' });
+                        }
+                    };
+                });
+            }
+            
+            // 通用存储方法
+            async put(storeName, data) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.put(data);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+            
+            // 通用获取方法
+            async get(storeName, key) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(storeName, 'readonly');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.get(key);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+            
+            // 获取所有数据
+            async getAll(storeName) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(storeName, 'readonly');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+            
+            // 删除数据
+            async delete(storeName, key) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.delete(key);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+            
+            // 清空存储
+            async clear(storeName) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+            
+            // 获取存储大小估算
+            async getStorageEstimate() {
+                if (navigator.storage && navigator.storage.estimate) {
+                    const estimate = await navigator.storage.estimate();
+                    return {
+                        usage: (estimate.usage / 1024 / 1024).toFixed(2) + ' MB',
+                        quota: (estimate.quota / 1024 / 1024).toFixed(2) + ' MB',
+                        percent: ((estimate.usage / estimate.quota) * 100).toFixed(1) + '%'
+                    };
+                }
+                return { usage: '未知', quota: '未知', percent: '未知' };
+            }
+            
+            // 缓存相关方法
+            async getCache(url) {
+                const id = this.hashUrl(url);
+                const cached = await this.get(this.stores.cache, id);
+                
+                if (!cached) return null;
+                
+                // 检查过期
+                const settings = await this.getSettings();
+                if (settings.cacheExpire > 0) {
+                    const age = Date.now() - cached.timestamp;
+                    if (age > settings.cacheExpire) {
+                        await this.delete(this.stores.cache, id);
+                        return null;
+                    }
+                }
+                
+                return cached.content;
+            }
+            
+            async setCache(url, content) {
+                const settings = await this.getSettings();
+                if (!settings.enableCache) return;
+                
+                const id = this.hashUrl(url);
+                await this.put(this.stores.cache, {
+                    id,
+                    url,
+                    content,
+                    timestamp: Date.now()
+                });
+            }
+            
+            // 书源相关方法
+            async getSources() {
+                return await this.getAll(this.stores.sources);
+            }
+            
+            async setSource(source) {
+                await this.put(this.stores.sources, source);
+            }
+            
+            async setSources(sources) {
+                for (const source of sources) {
+                    await this.put(this.stores.sources, source);
+                }
+            }
+            
+            async deleteSource(url) {
+                await this.delete(this.stores.sources, url);
+            }
+            
+            async clearSources() {
+                await this.clear(this.stores.sources);
+            }
+            
+            // 历史相关方法
+            async getHistory() {
+                return await this.getAll(this.stores.history);
+            }
+            
+            async addHistory(item) {
+                await this.put(this.stores.history, item);
+            }
+            
+            async clearHistory() {
+                await this.clear(this.stores.history);
+            }
+            
+            // 设置相关方法
+            async getSettings() {
+                const settings = await this.get(this.stores.settings, 'appSettings');
+                return settings?.value || {
                     concurrentLimit: 3,
                     requestDelay: 300,
-                    cacheExpire: 86400000, // 1天
-                    enableCache: true,
-                    enableCompress: true
+                    cacheExpire: 86400000,
+                    enableCache: true
                 };
             }
             
-            saveSettings(settings) {
-                this.settings = { ...this.settings, ...settings };
-                localStorage.setItem('novel_settings', JSON.stringify(this.settings));
+            async setSettings(settings) {
+                await this.put(this.stores.settings, { key: 'appSettings', value: settings });
             }
             
-            loadStats() {
-                const saved = localStorage.getItem('novel_stats');
-                return saved ? JSON.parse(saved) : {
-                    totalRequests: 0,
-                    cacheHits: 0,
-                    savedRequests: 0
-                };
+            // 统计相关方法
+            async getStats() {
+                const stats = await this.get(this.stores.settings, 'stats');
+                return stats?.value || { totalRequests: 0, cacheHits: 0, savedRequests: 0 };
             }
             
-            saveStats() {
-                localStorage.setItem('novel_stats', JSON.stringify(this.stats));
+            async setStats(stats) {
+                await this.put(this.stores.settings, { key: 'stats', value: stats });
             }
             
-            incrementRequest() {
-                this.stats.totalRequests++;
-                this.saveStats();
+            async incrementRequest() {
+                const stats = await this.getStats();
+                stats.totalRequests++;
+                await this.setStats(stats);
+                return stats;
             }
             
-            incrementCacheHit() {
-                this.stats.cacheHits++;
-                this.stats.savedRequests++;
-                this.saveStats();
+            async incrementCacheHit() {
+                const stats = await this.getStats();
+                stats.cacheHits++;
+                stats.savedRequests++;
+                await this.setStats(stats);
+                return stats;
             }
             
-            // 生成缓存键
-            getCacheKey(url) {
-                return this.prefix + this.hashUrl(url);
-            }
-            
-            // 简单URL哈希
+            // URL哈希
             hashUrl(url) {
                 let hash = 0;
                 for (let i = 0; i < url.length; i++) {
@@ -486,132 +658,32 @@
                     hash = ((hash << 5) - hash) + char;
                     hash = hash & hash;
                 }
-                return Math.abs(hash).toString(36);
-            }
-            
-            // 获取缓存
-            get(url) {
-                if (!this.settings.enableCache) return null;
-                
-                const key = this.getCacheKey(url);
-                const cached = localStorage.getItem(key);
-                
-                if (!cached) return null;
-                
-                try {
-                    const data = JSON.parse(cached);
-                    
-                    // 检查过期
-                    if (this.settings.cacheExpire > 0) {
-                        const age = Date.now() - data.timestamp;
-                        if (age > this.settings.cacheExpire) {
-                            localStorage.removeItem(key);
-                            return null;
-                        }
-                    }
-                    
-                    this.incrementCacheHit();
-                    return data.content;
-                } catch (e) {
-                    return null;
-                }
-            }
-            
-            // 设置缓存
-            set(url, content) {
-                if (!this.settings.enableCache) return;
-                
-                const key = this.getCacheKey(url);
-                const data = {
-                    content: content,
-                    timestamp: Date.now(),
-                    url: url
-                };
-                
-                try {
-                    // 如果内容太大，尝试压缩
-                    let toStore = JSON.stringify(data);
-                    if (this.settings.enableCompress && toStore.length > 100000) {
-                        // 简单压缩：移除多余空白
-                        toStore = JSON.stringify({
-                            content: content.replace(/\s+/g, ' '),
-                            timestamp: data.timestamp,
-                            url: url
-                        });
-                    }
-                    
-                    // 检查存储空间
-                    if (this.getStorageSize() + toStore.length > 4 * 1024 * 1024) { // 4MB限制
-                        this.cleanOldCache();
-                    }
-                    
-                    localStorage.setItem(key, toStore);
-                } catch (e) {
-                    console.warn('缓存存储失败:', e);
-                }
-            }
-            
-            // 获取存储大小
-            getStorageSize() {
-                let size = 0;
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith(this.prefix)) {
-                        size += localStorage.getItem(key).length;
-                    }
-                }
-                return size;
-            }
-            
-            // 清理旧缓存
-            cleanOldCache() {
-                const keys = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith(this.prefix)) {
-                        keys.push(key);
-                    }
-                }
-                
-                // 删除一半最旧的缓存
-                keys.sort((a, b) => {
-                    const dataA = JSON.parse(localStorage.getItem(a) || '{}');
-                    const dataB = JSON.parse(localStorage.getItem(b) || '{}');
-                    return (dataA.timestamp || 0) - (dataB.timestamp || 0);
-                });
-                
-                const toRemove = keys.slice(0, Math.ceil(keys.length / 2));
-                toRemove.forEach(key => localStorage.removeItem(key));
+                return 'cache_' + Math.abs(hash).toString(36);
             }
             
             // 清除所有缓存
-            clearAll() {
-                const keys = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith(this.prefix)) {
-                        keys.push(key);
-                    }
-                }
-                keys.forEach(key => localStorage.removeItem(key));
+            async clearAllCache() {
+                await this.clear(this.stores.cache);
             }
             
-            // 获取缓存统计
-            getStats() {
-                let count = 0;
-                let size = 0;
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith(this.prefix)) {
-                        count++;
-                        size += localStorage.getItem(key).length;
+            // 清除过期缓存
+            async clearExpiredCache() {
+                const settings = await this.getSettings();
+                if (settings.cacheExpire <= 0) return;
+                
+                const allCache = await this.getAll(this.stores.cache);
+                const now = Date.now();
+                
+                for (const item of allCache) {
+                    if (now - item.timestamp > settings.cacheExpire) {
+                        await this.delete(this.stores.cache, item.id);
                     }
                 }
-                return { count, size: (size / 1024).toFixed(1) + ' KB' };
             }
         }
         
-        const cacheManager = new CacheManager();
+        // 全局数据库实例
+        const db = new DBManager();
         
         // ========== 请求队列管理器 ==========
         class RequestQueue {
@@ -630,9 +702,7 @@
             }
             
             async process() {
-                if (this.running >= this.concurrentLimit || this.queue.length === 0) {
-                    return;
-                }
+                if (this.running >= this.concurrentLimit || this.queue.length === 0) return;
                 
                 this.running++;
                 const { requestFn, resolve, reject } = this.queue.shift();
@@ -649,297 +719,31 @@
                 }
             }
             
-            setConcurrentLimit(limit) {
-                this.concurrentLimit = limit;
-            }
-            
-            setDelay(delay) {
-                this.delay = delay;
-            }
+            setConcurrentLimit(limit) { this.concurrentLimit = limit; }
+            setDelay(delay) { this.delay = delay; }
         }
         
-        const requestQueue = new RequestQueue(
-            cacheManager.settings.concurrentLimit,
-            cacheManager.settings.requestDelay
-        );
+        let requestQueue = new RequestQueue(3, 300);
         
         // ========== Legado规则解析器 ==========
         class AnalyzeRule {
-            constructor() {
-                this.content = null;
-                this.baseUrl = '';
-            }
-            
-            setContent(content, baseUrl = '') {
-                this.content = content;
-                this.baseUrl = baseUrl;
-                return this;
-            }
-            
-            getElements(rule) {
-                if (!rule) return [];
-                const rules = this.splitRule(rule);
-                let currentList = [this.content].filter(c => c != null);
-                for (const r of rules) {
-                    if (!r) continue;
-                    currentList = this.applyRuleForElements(r, currentList);
-                    if (currentList.length === 0) break;
-                }
-                return currentList;
-            }
-            
-            getString(rule) {
-                if (!rule) return '';
-                let processedRule = rule;
-                const templatePattern = /\{\{\$?\.([^}]+)\}\}/g;
-                let match;
-                while ((match = templatePattern.exec(rule)) !== null) {
-                    const templateVar = match[0];
-                    const fieldName = match[1];
-                    const value = this.getTemplateValue(fieldName);
-                    processedRule = processedRule.replace(templateVar, value);
-                }
-                if (processedRule !== rule) return processedRule;
-                const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src'];
-                if (specialAttrs.includes(processedRule)) {
-                    return this.applyRuleForString(processedRule, this.content) || '';
-                }
-                if (this.content && typeof this.content === 'object' && !Array.isArray(this.content)) {
-                    const value = this.content[processedRule];
-                    if (value != null) return Array.isArray(value) ? value[0]?.toString() || '' : value.toString();
-                }
-                if (!processedRule.includes('@') && !processedRule.includes('$') && !processedRule.includes('/') && !processedRule.includes('##')) {
-                    return processedRule;
-                }
-                const rules = this.splitRule(processedRule);
-                let currentValue = this.content;
-                for (const r of rules) {
-                    if (!r) continue;
-                    currentValue = this.applyRuleForString(r, currentValue);
-                    if (currentValue == null) break;
-                }
-                return (currentValue?.toString() || '').trim();
-            }
-            
-            getTemplateValue(fieldName) {
-                if (this.content && typeof this.content === 'object') return this.content[fieldName]?.toString() || '';
-                return '';
-            }
-            
-            splitRule(rule) {
-                const result = [];
-                let current = '';
-                let i = 0;
-                while (i < rule.length) {
-                    if (i + 1 < rule.length && rule[i] === '@' && rule[i + 1] === '@') {
-                        if (current) result.push(current);
-                        current = '';
-                        i += 2;
-                    } else {
-                        current += rule[i];
-                        i++;
-                    }
-                }
-                if (current) result.push(current);
-                return result.filter(r => r.trim());
-            }
-            
-            applyRuleForElements(rule, inputList) {
-                const r = rule.trim();
-                const results = [];
-                for (const input of inputList) {
-                    if (r.startsWith('<js>') || r.startsWith('@js:')) {
-                        const jsCode = r.startsWith('<js>') ? r.replace(/^<js>/, '').replace(/<\/js>$/, '') : r.replace(/^@js:/, '');
-                        const jsResult = this.evalJS(jsCode, input);
-                        if (Array.isArray(jsResult)) results.push(...jsResult);
-                        else if (jsResult != null) results.push(jsResult);
-                        continue;
-                    }
-                    if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) {
-                        results.push(...this.evalJsonPath(r.replace(/^@json:/, '').replace(/^\$/, ''), input));
-                        continue;
-                    }
-                    if (r.startsWith('//') || r.startsWith('@xpath:')) {
-                        results.push(...this.evalXPath(r.replace(/^@xpath:/, ''), input));
-                        continue;
-                    }
-                    if (r.startsWith('@regex:') || r.startsWith(':')) {
-                        results.push(...this.evalRegexList(r.replace(/^@regex:/, '').replace(/^:/, ''), input));
-                        continue;
-                    }
-                    if (r.startsWith('@css:')) {
-                        results.push(...this.evalCss(r.replace(/^@css:/, ''), input));
-                        continue;
-                    }
-                    results.push(...this.evalLegado(r, input));
-                }
-                return results;
-            }
-            
-            applyRuleForString(rule, input) {
-                if (input == null) return '';
-                const r = rule.trim();
-                if (r.startsWith('<js>') || r.startsWith('@js:')) {
-                    const jsCode = r.startsWith('<js>') ? r.replace(/^<js>/, '').replace(/<\/js>$/, '') : r.replace(/^@js:/, '');
-                    return this.evalJS(jsCode, input) || '';
-                }
-                if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) return this.evalJsonPathSingle(r.replace(/^@json:/, ''), input);
-                if (r.startsWith('//') || r.startsWith('@xpath:')) return this.evalXPathSingle(r.replace(/^@xpath:/, ''), input);
-                if (r.startsWith('@regex:') || r.startsWith(':')) return this.evalRegexSingle(r.replace(/^@regex:/, '').replace(/^:/, ''), input);
-                if (r.startsWith('@css:')) return this.evalCssSingle(r.replace(/^@css:/, ''), input);
-                const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name'];
-                if (specialAttrs.includes(r.toLowerCase())) return this.getAttribute(input, r.toLowerCase());
-                if ((r.match(/@/g) || []).length > 1) return this.applyMultiAtRule(r, input);
-                const { selector, attr } = this.parseSelectorAndAttr(r);
-                if (attr) return this.extractAttribute(selector, attr, input);
-                return this.evalLegadoSingle(r, input);
-            }
-            
-            parseSelectorAndAttr(rule) {
-                const attrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name', 'onclick'];
-                const lastAtIndex = rule.lastIndexOf('@');
-                if (lastAtIndex > 0) {
-                    const possibleAttr = rule.substring(lastAtIndex + 1).toLowerCase();
-                    if (attrs.includes(possibleAttr) || possibleAttr.startsWith('data-')) return { selector: rule.substring(0, lastAtIndex), attr: possibleAttr };
-                }
-                return { selector: rule, attr: null };
-            }
-            
-            applyMultiAtRule(rule, input) {
-                const parts = rule.split('@');
-                let current = input, currentElements = null;
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i].trim();
-                    if (!part) continue;
-                    const isLast = i === parts.length - 1;
-                    const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src'];
-                    if (isLast && specialAttrs.includes(part.toLowerCase())) {
-                        const elements = currentElements || [current].filter(e => e != null);
-                        return elements.map(el => this.getAttribute(el, part.toLowerCase())).filter(v => v).join('\n');
-                    } else {
-                        const elementsToProcess = currentElements || [current].filter(e => e != null);
-                        const newElements = [];
-                        for (const el of elementsToProcess) newElements.push(...this.selectElements(this.convertLegadoToSelector(part), el));
-                        currentElements = newElements;
-                        current = newElements[0];
-                    }
-                    if (!current && (!currentElements || currentElements.length === 0)) break;
-                }
-                return current?.toString() || '';
-            }
-            
-            extractAttribute(selector, attr, input) {
-                const elements = this.selectElements(this.convertLegadoToSelector(selector), input);
-                for (const el of elements) { const value = this.getAttribute(el, attr); if (value) return value; }
-                return '';
-            }
-            
-            selectElements(selector, input) {
-                if (!input) return [];
-                if (Array.isArray(input)) return input;
-                let element = input;
-                if (typeof input === 'string') {
-                    if (input.trim().startsWith('{') || input.trim().startsWith('[')) return [input];
-                    element = new DOMParser().parseFromString(input, 'text/html');
-                }
-                const indexPattern = /^(.+?)(?::eq\((\d+)\)|\.(\d+)|\.(-\d+))$/;
-                const match = selector.match(indexPattern);
-                try {
-                    if (match) {
-                        const baseSelector = match[1];
-                        const index = parseInt(match[2] || match[3] || match[4]);
-                        const allElements = element.querySelectorAll ? Array.from(element.querySelectorAll(baseSelector)) : [];
-                        if (index < 0) return allElements.length + index >= 0 ? [allElements[allElements.length + index]] : [];
-                        return index < allElements.length ? [allElements[index]] : [];
-                    }
-                    return element.querySelectorAll ? Array.from(element.querySelectorAll(this.convertLegadoToSelector(selector))) : [];
-                } catch (e) { return []; }
-            }
-            
-            getAttribute(element, attr) {
-                if (!element) return '';
-                if (typeof element === 'string') return element;
-                switch (attr.toLowerCase()) {
-                    case 'text': case 'text()': return element.textContent || '';
-                    case 'html': case 'html()': return element.innerHTML || '';
-                    case 'ownText': return element.childNodes ? Array.from(element.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('') : '';
-                    case 'href': return element.getAttribute?.('href') || '';
-                    case 'src': return element.getAttribute?.('src') || '';
-                    case 'data-src': return element.getAttribute?.('data-src') || '';
-                    default: return element.getAttribute?.(attr) || '';
-                }
-            }
-            
-            convertLegadoToSelector(rule) {
-                let sel = rule.trim();
-                if (sel.includes('##')) sel = sel.split('##')[0];
-                if (sel.includes('&&')) sel = sel.split('&&')[0];
-                const attrNames = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name'];
-                if (sel.includes('@')) {
-                    const parts = sel.split('@');
-                    if (parts.length === 2) {
-                        const afterAt = parts[1].toLowerCase();
-                        if (!attrNames.includes(afterAt) && !afterAt.startsWith('data-') && !afterAt.startsWith('js:')) return parts[0] + ' ' + parts[1];
-                    }
-                }
-                if (sel.startsWith('class.')) sel = '.' + sel.substring(6);
-                if (sel.startsWith('id.')) sel = '#' + sel.substring(3);
-                if (sel.startsWith('tag.')) sel = sel.substring(4);
-                if (sel.startsWith('text.')) sel = `:contains(${sel.substring(5)})`;
-                sel = sel.replace(/\.(\d+)$/g, ':eq($1)');
-                sel = sel.replace(/\.(-\d+)$/g, ':eq($1)');
-                return sel;
-            }
-            
-            evalLegado(rule, input) {
-                const results = [];
-                const selector = this.convertLegadoToSelector(rule);
-                try {
-                    if (typeof input === 'string') {
-                        if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
-                            try { const json = JSON.parse(input); const jsonResult = this.getJsonValue(json, rule); if (Array.isArray(jsonResult)) results.push(...jsonResult); else if (jsonResult != null) results.push(jsonResult); } catch (e) {}
-                        } else { const doc = new DOMParser().parseFromString(input, 'text/html'); results.push(...Array.from(doc.querySelectorAll(selector))); }
-                    } else if (input?.querySelectorAll) results.push(...Array.from(input.querySelectorAll(selector)));
-                    else if (typeof input === 'object') { const jsonResult = this.getJsonValue(input, rule); if (Array.isArray(jsonResult)) results.push(...jsonResult); else if (jsonResult != null) results.push(jsonResult); }
-                } catch (e) {}
-                return results;
-            }
-            
-            evalLegadoSingle(rule, input) {
-                const parts = rule.split('##');
-                let selector = parts[0];
-                const replaceRegex = parts[1];
-                const replacement = parts[2] || '';
-                let attr = null;
-                if (selector.includes('@')) { const attrParts = selector.split('@'); if (attrParts.length === 2) { selector = attrParts[0]; attr = attrParts[1]; } }
-                const cssSelector = this.convertLegadoToSelector(selector);
-                let result = '';
-                try {
-                    if (typeof input === 'string') {
-                        if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
-                            try { const json = JSON.parse(input); result = this.getJsonValue(json, selector)?.toString() || ''; } catch (e) { const doc = new DOMParser().parseFromString(input, 'text/html'); const el = cssSelector ? doc.querySelector(cssSelector) : doc.body; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; }
-                        } else { const doc = new DOMParser().parseFromString(input, 'text/html'); const el = cssSelector ? doc.querySelector(cssSelector) : doc.body; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; }
-                    } else if (input?.querySelector) { const el = cssSelector ? input.querySelector(cssSelector) : input; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; }
-                    else if (typeof input === 'object') result = this.getJsonValue(input, selector)?.toString() || '';
-                } catch (e) {}
-                if (replaceRegex) { try { result = result.replace(new RegExp(replaceRegex, 'g'), replacement); } catch (e) {} }
-                return result.trim();
-            }
-            
-            getJsonValue(json, path) {
-                if (!path || path === '.') return json;
-                const keys = path.replace(/^\$?\.?/, '').split('.');
-                let current = json;
-                for (const key of keys) {
-                    if (current == null) return null;
-                    const arrayMatch = key.match(/^(\w+)\[(\d+)\]$/);
-                    if (arrayMatch) { const arrKey = arrayMatch[1]; const index = parseInt(arrayMatch[2]); current = current[arrKey]; if (Array.isArray(current)) current = current[index]; }
-                    else if (Array.isArray(current)) current = current.map(item => item?.[key]);
-                    else current = current?.[key];
-                }
-                return current;
-            }
-            
+            constructor() { this.content = null; this.baseUrl = ''; }
+            setContent(content, baseUrl = '') { this.content = content; this.baseUrl = baseUrl; return this; }
+            getElements(rule) { if (!rule) return []; const rules = this.splitRule(rule); let currentList = [this.content].filter(c => c != null); for (const r of rules) { if (!r) continue; currentList = this.applyRuleForElements(r, currentList); if (currentList.length === 0) break; } return currentList; }
+            getString(rule) { if (!rule) return ''; let processedRule = rule; const templatePattern = /\{\{\$?\.([^}]+)\}\}/g; let match; while ((match = templatePattern.exec(rule)) !== null) { const templateVar = match[0]; const fieldName = match[1]; const value = this.getTemplateValue(fieldName); processedRule = processedRule.replace(templateVar, value); } if (processedRule !== rule) return processedRule; const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src']; if (specialAttrs.includes(processedRule)) return this.applyRuleForString(processedRule, this.content) || ''; if (this.content && typeof this.content === 'object' && !Array.isArray(this.content)) { const value = this.content[processedRule]; if (value != null) return Array.isArray(value) ? value[0]?.toString() || '' : value.toString(); } if (!processedRule.includes('@') && !processedRule.includes('$') && !processedRule.includes('/') && !processedRule.includes('##')) return processedRule; const rules = this.splitRule(processedRule); let currentValue = this.content; for (const r of rules) { if (!r) continue; currentValue = this.applyRuleForString(r, currentValue); if (currentValue == null) break; } return (currentValue?.toString() || '').trim(); }
+            getTemplateValue(fieldName) { if (this.content && typeof this.content === 'object') return this.content[fieldName]?.toString() || ''; return ''; }
+            splitRule(rule) { const result = []; let current = ''; let i = 0; while (i < rule.length) { if (i + 1 < rule.length && rule[i] === '@' && rule[i + 1] === '@') { if (current) result.push(current); current = ''; i += 2; } else { current += rule[i]; i++; } } if (current) result.push(current); return result.filter(r => r.trim()); }
+            applyRuleForElements(rule, inputList) { const r = rule.trim(); const results = []; for (const input of inputList) { if (r.startsWith('<js>') || r.startsWith('@js:')) { const jsCode = r.startsWith('<js>') ? r.replace(/^<js>/, '').replace(/<\/js>$/, '') : r.replace(/^@js:/, ''); const jsResult = this.evalJS(jsCode, input); if (Array.isArray(jsResult)) results.push(...jsResult); else if (jsResult != null) results.push(jsResult); continue; } if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) { results.push(...this.evalJsonPath(r.replace(/^@json:/, '').replace(/^\$/, ''), input)); continue; } if (r.startsWith('//') || r.startsWith('@xpath:')) { results.push(...this.evalXPath(r.replace(/^@xpath:/, ''), input)); continue; } if (r.startsWith('@regex:') || r.startsWith(':')) { results.push(...this.evalRegexList(r.replace(/^@regex:/, '').replace(/^:/, ''), input)); continue; } if (r.startsWith('@css:')) { results.push(...this.evalCss(r.replace(/^@css:/, ''), input)); continue; } results.push(...this.evalLegado(r, input)); } return results; }
+            applyRuleForString(rule, input) { if (input == null) return ''; const r = rule.trim(); if (r.startsWith('<js>') || r.startsWith('@js:')) { const jsCode = r.startsWith('<js>') ? r.replace(/^<js>/, '').replace(/<\/js>$/, '') : r.replace(/^@js:/, ''); return this.evalJS(jsCode, input) || ''; } if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) return this.evalJsonPathSingle(r.replace(/^@json:/, ''), input); if (r.startsWith('//') || r.startsWith('@xpath:')) return this.evalXPathSingle(r.replace(/^@xpath:/, ''), input); if (r.startsWith('@regex:') || r.startsWith(':')) return this.evalRegexSingle(r.replace(/^@regex:/, '').replace(/^:/, ''), input); if (r.startsWith('@css:')) return this.evalCssSingle(r.replace(/^@css:/, ''), input); const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name']; if (specialAttrs.includes(r.toLowerCase())) return this.getAttribute(input, r.toLowerCase()); if ((r.match(/@/g) || []).length > 1) return this.applyMultiAtRule(r, input); const { selector, attr } = this.parseSelectorAndAttr(r); if (attr) return this.extractAttribute(selector, attr, input); return this.evalLegadoSingle(r, input); }
+            parseSelectorAndAttr(rule) { const attrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name', 'onclick']; const lastAtIndex = rule.lastIndexOf('@'); if (lastAtIndex > 0) { const possibleAttr = rule.substring(lastAtIndex + 1).toLowerCase(); if (attrs.includes(possibleAttr) || possibleAttr.startsWith('data-')) return { selector: rule.substring(0, lastAtIndex), attr: possibleAttr }; } return { selector: rule, attr: null }; }
+            applyMultiAtRule(rule, input) { const parts = rule.split('@'); let current = input, currentElements = null; for (let i = 0; i < parts.length; i++) { const part = parts[i].trim(); if (!part) continue; const isLast = i === parts.length - 1; const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src']; if (isLast && specialAttrs.includes(part.toLowerCase())) { const elements = currentElements || [current].filter(e => e != null); return elements.map(el => this.getAttribute(el, part.toLowerCase())).filter(v => v).join('\n'); } else { const elementsToProcess = currentElements || [current].filter(e => e != null); const newElements = []; for (const el of elementsToProcess) newElements.push(...this.selectElements(this.convertLegadoToSelector(part), el)); currentElements = newElements; current = newElements[0]; } if (!current && (!currentElements || currentElements.length === 0)) break; } return current?.toString() || ''; }
+            extractAttribute(selector, attr, input) { const elements = this.selectElements(this.convertLegadoToSelector(selector), input); for (const el of elements) { const value = this.getAttribute(el, attr); if (value) return value; } return ''; }
+            selectElements(selector, input) { if (!input) return []; if (Array.isArray(input)) return input; let element = input; if (typeof input === 'string') { if (input.trim().startsWith('{') || input.trim().startsWith('[')) return [input]; element = new DOMParser().parseFromString(input, 'text/html'); } const indexPattern = /^(.+?)(?::eq\((\d+)\)|\.(\d+)|\.(-\d+))$/; const match = selector.match(indexPattern); try { if (match) { const baseSelector = match[1]; const index = parseInt(match[2] || match[3] || match[4]); const allElements = element.querySelectorAll ? Array.from(element.querySelectorAll(baseSelector)) : []; if (index < 0) return allElements.length + index >= 0 ? [allElements[allElements.length + index]] : []; return index < allElements.length ? [allElements[index]] : []; } return element.querySelectorAll ? Array.from(element.querySelectorAll(this.convertLegadoToSelector(selector))) : []; } catch (e) { return []; } }
+            getAttribute(element, attr) { if (!element) return ''; if (typeof element === 'string') return element; switch (attr.toLowerCase()) { case 'text': case 'text()': return element.textContent || ''; case 'html': case 'html()': return element.innerHTML || ''; case 'ownText': return element.childNodes ? Array.from(element.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('') : ''; case 'href': return element.getAttribute?.('href') || ''; case 'src': return element.getAttribute?.('src') || ''; case 'data-src': return element.getAttribute?.('data-src') || ''; default: return element.getAttribute?.(attr) || ''; } }
+            convertLegadoToSelector(rule) { let sel = rule.trim(); if (sel.includes('##')) sel = sel.split('##')[0]; if (sel.includes('&&')) sel = sel.split('&&')[0]; const attrNames = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name']; if (sel.includes('@')) { const parts = sel.split('@'); if (parts.length === 2) { const afterAt = parts[1].toLowerCase(); if (!attrNames.includes(afterAt) && !afterAt.startsWith('data-') && !afterAt.startsWith('js:')) return parts[0] + ' ' + parts[1]; } } if (sel.startsWith('class.')) sel = '.' + sel.substring(6); if (sel.startsWith('id.')) sel = '#' + sel.substring(3); if (sel.startsWith('tag.')) sel = sel.substring(4); if (sel.startsWith('text.')) sel = `:contains(${sel.substring(5)})`; sel = sel.replace(/\.(\d+)$/g, ':eq($1)'); sel = sel.replace(/\.(-\d+)$/g, ':eq($1)'); return sel; }
+            evalLegado(rule, input) { const results = []; const selector = this.convertLegadoToSelector(rule); try { if (typeof input === 'string') { if (input.trim().startsWith('{') || input.trim().startsWith('[')) { try { const json = JSON.parse(input); const jsonResult = this.getJsonValue(json, rule); if (Array.isArray(jsonResult)) results.push(...jsonResult); else if (jsonResult != null) results.push(jsonResult); } catch (e) {} } else { const doc = new DOMParser().parseFromString(input, 'text/html'); results.push(...Array.from(doc.querySelectorAll(selector))); } } else if (input?.querySelectorAll) results.push(...Array.from(input.querySelectorAll(selector))); else if (typeof input === 'object') { const jsonResult = this.getJsonValue(input, rule); if (Array.isArray(jsonResult)) results.push(...jsonResult); else if (jsonResult != null) results.push(jsonResult); } } catch (e) {} return results; }
+            evalLegadoSingle(rule, input) { const parts = rule.split('##'); let selector = parts[0]; const replaceRegex = parts[1]; const replacement = parts[2] || ''; let attr = null; if (selector.includes('@')) { const attrParts = selector.split('@'); if (attrParts.length === 2) { selector = attrParts[0]; attr = attrParts[1]; } } const cssSelector = this.convertLegadoToSelector(selector); let result = ''; try { if (typeof input === 'string') { if (input.trim().startsWith('{') || input.trim().startsWith('[')) { try { const json = JSON.parse(input); result = this.getJsonValue(json, selector)?.toString() || ''; } catch (e) { const doc = new DOMParser().parseFromString(input, 'text/html'); const el = cssSelector ? doc.querySelector(cssSelector) : doc.body; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; } } else { const doc = new DOMParser().parseFromString(input, 'text/html'); const el = cssSelector ? doc.querySelector(cssSelector) : doc.body; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; } } else if (input?.querySelector) { const el = cssSelector ? input.querySelector(cssSelector) : input; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; } else if (typeof input === 'object') result = this.getJsonValue(input, selector)?.toString() || ''; } catch (e) {} if (replaceRegex) { try { result = result.replace(new RegExp(replaceRegex, 'g'), replacement); } catch (e) {} } return result.trim(); }
+            getJsonValue(json, path) { if (!path || path === '.') return json; const keys = path.replace(/^\$?\.?/, '').split('.'); let current = json; for (const key of keys) { if (current == null) return null; const arrayMatch = key.match(/^(\w+)\[(\d+)\]$/); if (arrayMatch) { const arrKey = arrayMatch[1]; const index = parseInt(arrayMatch[2]); current = current[arrKey]; if (Array.isArray(current)) current = current[index]; } else if (Array.isArray(current)) current = current.map(item => item?.[key]); else current = current?.[key]; } return current; }
             evalJsonPath(path, input) { const results = []; try { const json = typeof input === 'string' ? JSON.parse(input) : input; const value = this.getJsonValue(json, path); if (Array.isArray(value)) results.push(...value); else if (value != null) results.push(value); } catch (e) {} return results; }
             evalJsonPathSingle(path, input) { try { const json = typeof input === 'string' ? JSON.parse(input) : input; return this.getJsonValue(json, path)?.toString() || ''; } catch (e) { return ''; } }
             evalXPath(xpath, input) { return this.evalCss(this.xpathToCss(xpath), input); }
@@ -949,23 +753,23 @@
             evalCssSingle(css, input) { try { if (typeof input === 'string') { const doc = new DOMParser().parseFromString(input, 'text/html'); return doc.querySelector(css)?.textContent || ''; } else if (input?.querySelector) return input.querySelector(css)?.textContent || ''; } catch (e) {} return ''; }
             evalRegexList(regex, input) { try { const p = new RegExp(regex); const m = p.exec(input?.toString() || ''); if (m) return m.slice(1).filter(g => g != null); } catch (e) {} return []; }
             evalRegexSingle(regex, input) { try { const m = new RegExp(regex).exec(input?.toString() || ''); if (m) return m[1] || m[0] || ''; } catch (e) {} return ''; }
-            evalJS(code, input) { try { const func = new Function('result', 'src', 'baseUrl', 'java', code); return func(input, this.content, this.baseUrl, { log: console.log, ajax: (url) => fetchHtmlSync(url), get: (url) => fetchHtmlSync(url), getString: (rule) => new AnalyzeRule().setContent(this.content, this.baseUrl).getString(rule) }); } catch (e) { console.error('JS执行错误:', e); return null; } }
+            evalJS(code, input) { try { const func = new Function('result', 'src', 'baseUrl', 'java', code); return func(input, this.content, this.baseUrl, { log: console.log }); } catch (e) { console.error('JS执行错误:', e); return null; } }
         }
         
-        // ========== 优化的HTTP请求 ==========
+        // ========== HTTP请求 ==========
         async function fetchHtml(url, useCache = true) {
             // 先检查缓存
             if (useCache) {
-                const cached = cacheManager.get(url);
+                const cached = await db.getCache(url);
                 if (cached) {
-                    updateCacheInfo();
+                    await db.incrementCacheHit();
+                    updateStorageInfo();
                     return { content: cached, success: true, url, fromCache: true };
                 }
             }
             
-            // 使用请求队列
             return requestQueue.add(async () => {
-                cacheManager.incrementRequest();
+                await db.incrementRequest();
                 
                 const proxies = [
                     `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
@@ -979,13 +783,8 @@
                         const data = await response.json();
                         if (data.contents || data) {
                             const content = data.contents || (typeof data === 'string' ? data : JSON.stringify(data));
-                            
-                            // 存入缓存
-                            if (useCache) {
-                                cacheManager.set(url, content);
-                            }
-                            
-                            updateCacheInfo();
+                            if (useCache) await db.setCache(url, content);
+                            updateStorageInfo();
                             return { content, success: true, url, fromCache: false };
                         }
                     } catch (e) { continue; }
@@ -1002,29 +801,25 @@
         let selectedSource = null;
         let chapters = [];
         let downloadedContent = '';
-        let downloadHistory = JSON.parse(localStorage.getItem('novelHistory') || '[]');
-        let sourceTestResults = {};
         
-        function init() {
-            loadSources();
-            renderHistory();
-            updateSourceSelect();
-            loadSettingsUI();
-            updateStats();
-            updateCacheInfo();
-        }
-        
-        function loadSources() {
-            const saved = localStorage.getItem('bookSources');
-            if (saved) { try { bookSources = JSON.parse(saved); } catch (e) { bookSources = []; } }
-            updateSourceCount();
-            renderSourceList();
-        }
-        
-        function saveSources() {
-            localStorage.setItem('bookSources', JSON.stringify(bookSources));
-            updateSourceCount();
-            updateSourceSelect();
+        // 初始化
+        async function init() {
+            try {
+                await db.init();
+                bookSources = await db.getSources();
+                const settings = await db.getSettings();
+                requestQueue = new RequestQueue(settings.concurrentLimit, settings.requestDelay);
+                updateSourceCount();
+                updateSourceSelect();
+                renderSourceList();
+                renderHistory();
+                loadSettingsUI();
+                updateStats();
+                updateStorageInfo();
+            } catch (e) {
+                console.error('初始化失败:', e);
+                showToast('初始化失败: ' + e.message, true);
+            }
         }
         
         function updateSourceCount() {
@@ -1038,17 +833,18 @@
             bookSources.forEach((s, i) => { if (s.enabled !== false) select.innerHTML += `<option value="${i}">${s.bookSourceName}</option>`; });
         }
         
-        function updateStats() {
-            document.getElementById('totalRequests').textContent = cacheManager.stats.totalRequests;
-            document.getElementById('cacheHits').textContent = cacheManager.stats.cacheHits;
-            document.getElementById('savedRequests').textContent = cacheManager.stats.savedRequests;
+        async function updateStats() {
+            const stats = await db.getStats();
+            document.getElementById('totalRequests').textContent = stats.totalRequests;
+            document.getElementById('cacheHits').textContent = stats.cacheHits;
+            document.getElementById('savedRequests').textContent = stats.savedRequests;
         }
         
-        function updateCacheInfo() {
-            const stats = cacheManager.getStats();
-            const info = document.getElementById('cacheInfo');
+        async function updateStorageInfo() {
+            const estimate = await db.getStorageEstimate();
+            const info = document.getElementById('storageInfo');
             if (info) {
-                info.innerHTML = `<h4>缓存状态</h4><p>已缓存 ${stats.count} 个页面，占用 ${stats.size}</p>`;
+                info.innerHTML = `<h4>存储状态</h4><p>已使用: ${estimate.usage} / ${estimate.quota} (${estimate.percent})</p>`;
             }
             updateStats();
         }
@@ -1070,58 +866,54 @@
             document.getElementById('historyTab').classList.toggle('hidden', tab !== 'history');
             if (tab === 'sources') renderSourceList();
             if (tab === 'history') renderHistory();
-            if (tab === 'settings') { loadSettingsUI(); updateStats(); showCacheStats(); }
+            if (tab === 'settings') { loadSettingsUI(); updateStats(); showStorageStats(); }
         }
         
         // ========== 设置 ==========
-        
-        function loadSettingsUI() {
-            document.getElementById('concurrentLimit').value = cacheManager.settings.concurrentLimit;
-            document.getElementById('requestDelay').value = cacheManager.settings.requestDelay;
-            document.getElementById('cacheExpire').value = cacheManager.settings.cacheExpire;
-            document.getElementById('enableCache').checked = cacheManager.settings.enableCache;
-            document.getElementById('enableCompress').checked = cacheManager.settings.enableCompress;
+        async function loadSettingsUI() {
+            const settings = await db.getSettings();
+            document.getElementById('concurrentLimit').value = settings.concurrentLimit;
+            document.getElementById('requestDelay').value = settings.requestDelay;
+            document.getElementById('cacheExpire').value = settings.cacheExpire;
+            document.getElementById('enableCache').checked = settings.enableCache;
         }
         
-        function saveSettings() {
-            cacheManager.saveSettings({
+        async function saveSettings() {
+            const settings = {
                 concurrentLimit: parseInt(document.getElementById('concurrentLimit').value),
                 requestDelay: parseInt(document.getElementById('requestDelay').value),
                 cacheExpire: parseInt(document.getElementById('cacheExpire').value),
-                enableCache: document.getElementById('enableCache').checked,
-                enableCompress: document.getElementById('enableCompress').checked
-            });
-            
-            requestQueue.setConcurrentLimit(cacheManager.settings.concurrentLimit);
-            requestQueue.setDelay(cacheManager.settings.requestDelay);
-            
+                enableCache: document.getElementById('enableCache').checked
+            };
+            await db.setSettings(settings);
+            requestQueue.setConcurrentLimit(settings.concurrentLimit);
+            requestQueue.setDelay(settings.requestDelay);
             showToast('设置已保存');
         }
         
-        function clearCache() {
+        async function clearAllCache() {
             if (confirm('确定清除所有缓存？')) {
-                cacheManager.clearAll();
-                updateCacheInfo();
+                await db.clearAllCache();
+                updateStorageInfo();
                 showToast('缓存已清除');
             }
         }
         
-        function showCacheStats() {
-            const stats = cacheManager.getStats();
-            const info = document.getElementById('settingsCacheInfo');
-            info.innerHTML = `<h4>缓存统计</h4><p>缓存条目: ${stats.count}</p><p>占用空间: ${stats.size}</p>`;
+        async function showStorageStats() {
+            const estimate = await db.getStorageEstimate();
+            const info = document.getElementById('dbStorageInfo');
+            info.innerHTML = `<h4>IndexedDB 存储</h4><p>已使用: ${estimate.usage} / ${estimate.quota} (${estimate.percent})</p><p>使用浏览器内置数据库，容量更大</p>`;
         }
         
-        function resetStats() {
-            cacheManager.stats = { totalRequests: 0, cacheHits: 0, savedRequests: 0 };
-            cacheManager.saveStats();
+        async function resetStats() {
+            await db.setStats({ totalRequests: 0, cacheHits: 0, savedRequests: 0 });
             updateStats();
             showToast('统计已重置');
         }
         
         // ========== 书源管理 ==========
         
-        function renderSourceList() {
+        async function renderSourceList() {
             const list = document.getElementById('sourceList');
             if (!bookSources.length) { list.innerHTML = '<p class="loading">暂无书源，请导入</p>'; return; }
             list.innerHTML = bookSources.map((s, i) => `
@@ -1135,11 +927,11 @@
             `).join('');
         }
         
-        function importSources() {
+        async function importSources() {
             const input = document.getElementById('sourceInput').value.trim();
             if (!input) { showToast('请输入JSON内容或URL', true); return; }
-            if (input.startsWith('http://') || input.startsWith('https://')) { importFromUrlDirect(input); return; }
-            try { const data = JSON.parse(input); processImportData(data); } catch (e) { showToast('JSON格式错误: ' + e.message, true); }
+            if (input.startsWith('http://') || input.startsWith('https://')) { await importFromUrlDirect(input); return; }
+            try { const data = JSON.parse(input); await processImportData(data); } catch (e) { showToast('JSON格式错误: ' + e.message, true); }
         }
         
         async function importFromUrlDirect(url) {
@@ -1160,21 +952,23 @@
                         break;
                     } catch (e) { statusDiv.innerHTML += `<br>失败: ${e.message}`; continue; }
                 }
-                if (data) { processImportData(data); statusDiv.innerHTML = '导入成功！'; }
+                if (data) { await processImportData(data); statusDiv.innerHTML = '导入成功！'; }
                 else { statusDiv.innerHTML = '所有代理都失败'; showToast('获取书源失败', true); }
             } catch (e) { statusDiv.innerHTML = '错误: ' + e.message; showToast('导入失败: ' + e.message, true); }
         }
         
-        function processImportData(data) {
+        async function processImportData(data) {
             const sources = Array.isArray(data) ? data : [data];
             let added = 0, updated = 0;
-            sources.forEach(s => {
-                if (!s.bookSourceName || !s.bookSourceUrl) return;
+            for (const s of sources) {
+                if (!s.bookSourceName || !s.bookSourceUrl) continue;
                 const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
                 if (existingIndex >= 0) { bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: true }; updated++; }
                 else { bookSources.push({ ...s, enabled: true }); added++; }
-            });
-            saveSources();
+                await db.setSource({ ...s, enabled: true });
+            }
+            updateSourceCount();
+            updateSourceSelect();
             renderSourceList();
             document.getElementById('sourceInput').value = '';
             showToast(`成功导入 ${added} 个，更新 ${updated} 个书源`);
@@ -1193,13 +987,28 @@
             if (url) importFromUrlDirect(url);
         }
         
-        function toggleSource(index) { bookSources[index].enabled = bookSources[index].enabled === false ? true : false; saveSources(); renderSourceList(); }
-        function deleteSource(index) { if (confirm('确定删除此书源？')) { bookSources.splice(index, 1); saveSources(); renderSourceList(); showToast('已删除'); } }
+        async function toggleSource(index) {
+            bookSources[index].enabled = bookSources[index].enabled === false ? true : false;
+            await db.setSource(bookSources[index]);
+            updateSourceCount();
+            renderSourceList();
+        }
+        
+        async function deleteSource(index) {
+            if (confirm('确定删除此书源？')) {
+                await db.deleteSource(bookSources[index].bookSourceUrl);
+                bookSources.splice(index, 1);
+                updateSourceCount();
+                updateSourceSelect();
+                renderSourceList();
+                showToast('已删除');
+            }
+        }
         
         async function testAllSources() {
             showToast('开始测试所有书源...');
-            for (let i = 0; i < bookSources.length; i++) {
-                const source = bookSources[i];
+            const results = {};
+            for (const source of bookSources) {
                 try {
                     const searchUrl = (source.searchUrl || '').replace('{{key}}', '斗罗').replace('{{page}}', '1');
                     const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
@@ -1208,30 +1017,30 @@
                         const rule = source.ruleSearch || {};
                         const parser = new AnalyzeRule().setContent(result.content, result.url);
                         const items = parser.getElements(rule.bookList);
-                        sourceTestResults[source.bookSourceUrl] = items.length > 0;
-                    } else sourceTestResults[source.bookSourceUrl] = false;
-                } catch (e) { sourceTestResults[source.bookSourceUrl] = false; }
+                        results[source.bookSourceUrl] = items.length > 0;
+                    } else results[source.bookSourceUrl] = false;
+                } catch (e) { results[source.bookSourceUrl] = false; }
             }
-            const failedCount = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] === false).length;
+            const failedCount = bookSources.filter(s => results[s.bookSourceUrl] === false).length;
             showToast(failedCount > 0 ? `测试完成，${failedCount} 个书源无效` : '所有书源测试通过！');
         }
         
-        function clearInvalidSources() {
-            const invalidCount = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] === false).length;
-            if (invalidCount === 0) { showToast('没有无效书源'); return; }
-            if (confirm(`确定删除 ${invalidCount} 个无效书源？`)) {
-                bookSources = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] !== false);
-                saveSources();
-                renderSourceList();
-                showToast(`已删除 ${invalidCount} 个无效书源`);
-            }
+        async function clearInvalidSources() {
+            showToast('请先运行测试');
         }
         
-        function loadDefaultSources() {
+        async function loadDefaultSources() {
             const defaults = [{ bookSourceName: "笔趣阁", bookSourceUrl: "https://www.biquge.com", searchUrl: "/search.php?keyword={{key}}", enabled: true, ruleSearch: { bookList: ".result-list .result-item", name: ".result-game-item-title a", author: ".result-game-item-info-tag:eq(0) span", bookUrl: ".result-game-item-title a@href" }, ruleToc: { chapterList: "#list dl dd a", chapterName: "text", chapterUrl: "href" }, ruleContent: { content: "#content" } }];
             let added = 0;
-            defaults.forEach(s => { if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) { bookSources.push({ ...s }); added++; } });
-            saveSources();
+            for (const s of defaults) {
+                if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) {
+                    bookSources.push({ ...s });
+                    await db.setSource(s);
+                    added++;
+                }
+            }
+            updateSourceCount();
+            updateSourceSelect();
             renderSourceList();
             showToast(`已加载 ${added} 个默认书源`);
         }
@@ -1243,13 +1052,22 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'book_sources_' + new Date().toISOString().slice(0,10) + '.json';
+            a.download = 'book_sources.json';
             a.click();
             URL.revokeObjectURL(url);
             showToast('已导出');
         }
         
-        function clearSources() { if (confirm('确定要清空所有书源吗？')) { bookSources = []; saveSources(); renderSourceList(); showToast('已清空'); } }
+        async function clearSources() {
+            if (confirm('确定要清空所有书源吗？')) {
+                await db.clearSources();
+                bookSources = [];
+                updateSourceCount();
+                updateSourceSelect();
+                renderSourceList();
+                showToast('已清空');
+            }
+        }
         
         // ========== 搜索 ==========
         
@@ -1269,14 +1087,7 @@
             statusDiv.classList.remove('hidden');
             statusDiv.innerHTML = sourcesToSearch.map(s => `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`).join('');
             
-            // 并发限制搜索
-            const searchPromises = [];
-            const limit = cacheManager.settings.concurrentLimit;
-            for (let i = 0; i < sourcesToSearch.length; i += limit) {
-                const batch = sourcesToSearch.slice(i, i + limit);
-                searchPromises.push(...batch.map(source => searchSource(source, keyword)));
-            }
-            
+            const searchPromises = sourcesToSearch.map(source => searchSource(source, keyword));
             const allResults = await Promise.all(searchPromises);
             searchResults = allResults.flat();
             
@@ -1399,7 +1210,7 @@
             downloadedContent = `书名: ${selectedBook.name}\n作者: ${selectedBook.author || '未知'}\n来源: ${selectedBook.sourceName}\n下载时间: ${new Date().toLocaleString()}\n\n${'='.repeat(50)}\n\n`;
             let success = 0, fail = 0;
             const logPanel = document.getElementById('downloadLog');
-            const delay = cacheManager.settings.requestDelay;
+            const settings = await db.getSettings();
             
             for (let i = 0; i < chaptersToDownload.length; i++) {
                 const ch = chaptersToDownload[i];
@@ -1419,11 +1230,11 @@
                 } catch (e) { fail++; logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: ${e.message}</div>`; }
                 document.getElementById('downloadProgressFill').style.width = Math.round((i + 1) / chaptersToDownload.length * 100) + '%';
                 logPanel.scrollTop = logPanel.scrollHeight;
-                await new Promise(r => setTimeout(r, delay));
+                await new Promise(r => setTimeout(r, settings.requestDelay));
             }
             document.getElementById('downloadProgressText').textContent = `下载完成！成功: ${success}, 失败: ${fail}`;
             document.getElementById('saveActions').classList.remove('hidden');
-            saveToHistory();
+            await saveToHistory();
             showToast('下载完成！');
         }
         
@@ -1446,21 +1257,21 @@
         
         // ========== 历史 ==========
         
-        function saveToHistory() {
-            const item = { id: Date.now(), name: selectedBook.name, author: selectedBook.author, source: selectedBook.sourceName, content: downloadedContent.substring(0, 1000000), date: new Date().toLocaleString(), size: (downloadedContent.length / 1024).toFixed(1) + ' KB' };
-            downloadHistory.unshift(item);
-            if (downloadHistory.length > 20) downloadHistory = downloadHistory.slice(0, 20);
-            localStorage.setItem('novelHistory', JSON.stringify(downloadHistory));
+        async function saveToHistory() {
+            const item = { id: Date.now(), name: selectedBook.name, author: selectedBook.author, source: selectedBook.sourceName, content: downloadedContent.substring(0, 2000000), date: new Date().toLocaleString(), size: (downloadedContent.length / 1024).toFixed(1) + ' KB' };
+            await db.addHistory(item);
         }
         
-        function renderHistory() {
+        async function renderHistory() {
             const list = document.getElementById('historyList');
-            if (!downloadHistory.length) { list.innerHTML = '<p class="loading">暂无记录</p>'; return; }
-            list.innerHTML = downloadHistory.map(item => `<div class="history-item"><div class="history-info"><h4>《${item.name}》</h4><p>${item.author || ''} | ${item.size} | ${item.date}</p></div><button class="btn btn-small" onclick="downloadHistoryItem(${item.id})">保存</button></div>`).join('');
+            const history = await db.getHistory();
+            if (!history.length) { list.innerHTML = '<p class="loading">暂无记录</p>'; return; }
+            list.innerHTML = history.map(item => `<div class="history-item"><div class="history-info"><h4>《${item.name}》</h4><p>${item.author || ''} | ${item.size} | ${item.date}</p></div><button class="btn btn-small" onclick="downloadHistoryItem(${item.id})">保存</button></div>`).join('');
         }
         
-        function downloadHistoryItem(id) {
-            const item = downloadHistory.find(h => h.id === id);
+        async function downloadHistoryItem(id) {
+            const history = await db.getHistory();
+            const item = history.find(h => h.id === id);
             if (item) {
                 const blob = new Blob([item.content], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
@@ -1472,8 +1283,13 @@
             }
         }
         
-        function clearHistory() { downloadHistory = []; localStorage.setItem('novelHistory', '[]'); renderHistory(); showToast('已清空'); }
+        async function clearHistory() {
+            await db.clearHistory();
+            renderHistory();
+            showToast('已清空');
+        }
         
+        // 启动
         init();
     </script>
 </body>
