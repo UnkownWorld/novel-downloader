@@ -136,7 +136,7 @@
             font-family: monospace;
         }
         
-        .stats { display: flex; gap: 10px; margin-bottom: 12px; }
+        .stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
         .stat { text-align: center; padding: 8px 12px; background: rgba(233, 69, 96, 0.1); border-radius: 6px; border: 1px solid rgba(233, 69, 96, 0.2); }
         .stat .num { font-size: 1.3rem; font-weight: bold; color: #e94560; }
         .stat .label { font-size: 0.7rem; color: rgba(255,255,255,0.6); }
@@ -199,20 +199,52 @@
             border-radius: 6px;
             font-size: 0.85rem;
         }
+        
+        .cache-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 184, 148, 0.1);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            border: 1px solid rgba(0, 184, 148, 0.2);
+        }
+        
+        .cache-info h4 { color: #00b894; margin-bottom: 5px; }
+        
+        .settings-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .settings-row label {
+            min-width: 120px;
+            font-size: 0.85rem;
+        }
+        
+        .settings-row input[type="number"] {
+            width: 80px;
+        }
+        
+        .settings-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📚 小说下载器</h1>
-            <p>完整复刻Legado书源规则 | 支持所有选择器语法</p>
+            <p>完整复刻Legado书源规则 | 本地缓存优化</p>
         </div>
         
         <div class="tabs">
             <button class="tab active" onclick="showTab('search')">🔍 搜索下载</button>
             <button class="tab" onclick="showTab('sources')">📚 书源管理</button>
+            <button class="tab" onclick="showTab('settings')">⚙️ 设置</button>
             <button class="tab" onclick="showTab('history')">📁 历史</button>
-            <button class="tab" onclick="showTab('help')">❓ 帮助</button>
         </div>
         
         <!-- 搜索页面 -->
@@ -226,6 +258,7 @@
                     <button type="submit" class="btn" id="searchBtn">搜索</button>
                 </form>
                 <div class="search-status hidden" id="searchStatus"></div>
+                <div class="cache-info" id="cacheInfo"></div>
             </div>
             
             <div class="card hidden" id="resultsCard">
@@ -283,10 +316,6 @@
                 </div>
                 
                 <h3 style="margin-bottom:8px;font-size:0.95rem">导入书源</h3>
-                <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:8px">
-                    支持Legado完整格式JSON，可以是单个书源或书源数组
-                </p>
-                
                 <textarea id="sourceInput" placeholder='粘贴Legado格式书源JSON，或输入书源URL...'></textarea>
                 
                 <div class="btn-group" style="margin-top:8px">
@@ -315,6 +344,70 @@
             </div>
         </div>
         
+        <!-- 设置页面 -->
+        <div id="settingsTab" class="hidden">
+            <div class="card">
+                <h3 style="margin-bottom:15px;font-size:0.95rem">⚙️ 优化设置</h3>
+                
+                <div class="settings-row">
+                    <label>并发请求数:</label>
+                    <input type="number" id="concurrentLimit" value="3" min="1" max="10">
+                    <span style="font-size:0.8rem;color:rgba(255,255,255,0.5)">同时搜索的书源数量</span>
+                </div>
+                
+                <div class="settings-row">
+                    <label>请求延迟(ms):</label>
+                    <input type="number" id="requestDelay" value="300" min="100" max="2000">
+                    <span style="font-size:0.8rem;color:rgba(255,255,255,0.5)">章节下载间隔</span>
+                </div>
+                
+                <div class="settings-row">
+                    <label>缓存有效期:</label>
+                    <select id="cacheExpire">
+                        <option value="3600000">1小时</option>
+                        <option value="86400000" selected>1天</option>
+                        <option value="604800000">1周</option>
+                        <option value="0">永不过期</option>
+                    </select>
+                </div>
+                
+                <div class="settings-row">
+                    <label><input type="checkbox" id="enableCache" checked> 启用缓存</label>
+                </div>
+                
+                <div class="settings-row">
+                    <label><input type="checkbox" id="enableCompress" checked> 压缩存储</label>
+                </div>
+                
+                <div class="btn-group" style="margin-top:15px">
+                    <button class="btn" onclick="saveSettings()">💾 保存设置</button>
+                    <button class="btn btn-secondary" onclick="clearCache()">🗑️ 清除缓存</button>
+                    <button class="btn btn-secondary" onclick="showCacheStats()">📊 缓存统计</button>
+                </div>
+                
+                <div class="cache-info" id="settingsCacheInfo"></div>
+            </div>
+            
+            <div class="card">
+                <h3 style="margin-bottom:10px;font-size:0.95rem">📊 请求统计</h3>
+                <div class="stats">
+                    <div class="stat">
+                        <div class="num" id="totalRequests">0</div>
+                        <div class="label">总请求数</div>
+                    </div>
+                    <div class="stat">
+                        <div class="num" id="cacheHits">0</div>
+                        <div class="label">缓存命中</div>
+                    </div>
+                    <div class="stat">
+                        <div class="num" id="savedRequests">0</div>
+                        <div class="label">节省请求</div>
+                    </div>
+                </div>
+                <button class="btn btn-secondary btn-small" onclick="resetStats()">重置统计</button>
+            </div>
+        </div>
+        
         <!-- 历史页面 -->
         <div id="historyTab" class="hidden">
             <div class="card">
@@ -324,47 +417,253 @@
             </div>
         </div>
         
-        <!-- 帮助页面 -->
-        <div id="helpTab" class="hidden">
-            <div class="card">
-                <h3 style="margin-bottom:10px;font-size:0.95rem">📖 Legado书源规则完整说明</h3>
-                
-                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">选择器类型</h4>
-                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
-                    <li><code>CSS选择器</code> - 如 <code>.class</code> <code>#id</code> <code>tag</code></li>
-                    <li><code>XPath</code> - 以 <code>//</code> 开头</li>
-                    <li><code>JSONPath</code> - 以 <code>$.</code> 开头</li>
-                    <li><code>正则表达式</code> - 以 <code>:</code> 或 <code>@regex:</code> 开头</li>
-                    <li><code>JavaScript</code> - 以 <code>@js:</code> 开头</li>
-                </ul>
-                
-                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">Legado特殊语法</h4>
-                <ul style="font-size:0.8rem;color:rgba(255,255,255,0.7);padding-left:20px;line-height:1.8">
-                    <li><code>class.xxx</code> → <code>.xxx</code></li>
-                    <li><code>id.xxx</code> → <code>#xxx</code></li>
-                    <li><code>tag.xxx</code> → <code>xxx</code></li>
-                    <li><code>.0</code> <code>.1</code> <code>.-1</code> → 索引选择器</li>
-                    <li><code>@text</code> <code>@html</code> <code>@href</code> <code>@src</code> → 属性提取</li>
-                    <li><code>##正则</code> → 正则替换</li>
-                    <li><code>{{key}}</code> <code>{{page}}</code> → URL变量</li>
-                </ul>
-                
-                <h4 style="margin:12px 0 6px;font-size:0.9rem;color:#e94560">示例书源URL</h4>
-                <p style="font-size:0.8rem;color:rgba(255,255,255,0.7);word-break:break-all">
-                    https://www.yckceo.com/yuedu/shuyuans/json/id/1063.json
-                </p>
-            </div>
-        </div>
-        
         <div style="text-align:center;color:rgba(255,255,255,0.4);margin-top:12px;font-size:0.75rem">
-            完整复刻Legado书源规则 | 书源来源于网络，仅供学习交流
+            本地缓存优化 | 减少网络请求 | 书源来源于网络仅供学习
         </div>
     </div>
     
     <div class="toast" id="toast"></div>
     
     <script>
-        // ========== 完整复刻Legado规则解析器 ==========
+        // ========== 缓存管理器 ==========
+        class CacheManager {
+            constructor() {
+                this.prefix = 'novel_cache_';
+                this.settings = this.loadSettings();
+                this.stats = this.loadStats();
+            }
+            
+            loadSettings() {
+                const saved = localStorage.getItem('novel_settings');
+                return saved ? JSON.parse(saved) : {
+                    concurrentLimit: 3,
+                    requestDelay: 300,
+                    cacheExpire: 86400000, // 1天
+                    enableCache: true,
+                    enableCompress: true
+                };
+            }
+            
+            saveSettings(settings) {
+                this.settings = { ...this.settings, ...settings };
+                localStorage.setItem('novel_settings', JSON.stringify(this.settings));
+            }
+            
+            loadStats() {
+                const saved = localStorage.getItem('novel_stats');
+                return saved ? JSON.parse(saved) : {
+                    totalRequests: 0,
+                    cacheHits: 0,
+                    savedRequests: 0
+                };
+            }
+            
+            saveStats() {
+                localStorage.setItem('novel_stats', JSON.stringify(this.stats));
+            }
+            
+            incrementRequest() {
+                this.stats.totalRequests++;
+                this.saveStats();
+            }
+            
+            incrementCacheHit() {
+                this.stats.cacheHits++;
+                this.stats.savedRequests++;
+                this.saveStats();
+            }
+            
+            // 生成缓存键
+            getCacheKey(url) {
+                return this.prefix + this.hashUrl(url);
+            }
+            
+            // 简单URL哈希
+            hashUrl(url) {
+                let hash = 0;
+                for (let i = 0; i < url.length; i++) {
+                    const char = url.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                return Math.abs(hash).toString(36);
+            }
+            
+            // 获取缓存
+            get(url) {
+                if (!this.settings.enableCache) return null;
+                
+                const key = this.getCacheKey(url);
+                const cached = localStorage.getItem(key);
+                
+                if (!cached) return null;
+                
+                try {
+                    const data = JSON.parse(cached);
+                    
+                    // 检查过期
+                    if (this.settings.cacheExpire > 0) {
+                        const age = Date.now() - data.timestamp;
+                        if (age > this.settings.cacheExpire) {
+                            localStorage.removeItem(key);
+                            return null;
+                        }
+                    }
+                    
+                    this.incrementCacheHit();
+                    return data.content;
+                } catch (e) {
+                    return null;
+                }
+            }
+            
+            // 设置缓存
+            set(url, content) {
+                if (!this.settings.enableCache) return;
+                
+                const key = this.getCacheKey(url);
+                const data = {
+                    content: content,
+                    timestamp: Date.now(),
+                    url: url
+                };
+                
+                try {
+                    // 如果内容太大，尝试压缩
+                    let toStore = JSON.stringify(data);
+                    if (this.settings.enableCompress && toStore.length > 100000) {
+                        // 简单压缩：移除多余空白
+                        toStore = JSON.stringify({
+                            content: content.replace(/\s+/g, ' '),
+                            timestamp: data.timestamp,
+                            url: url
+                        });
+                    }
+                    
+                    // 检查存储空间
+                    if (this.getStorageSize() + toStore.length > 4 * 1024 * 1024) { // 4MB限制
+                        this.cleanOldCache();
+                    }
+                    
+                    localStorage.setItem(key, toStore);
+                } catch (e) {
+                    console.warn('缓存存储失败:', e);
+                }
+            }
+            
+            // 获取存储大小
+            getStorageSize() {
+                let size = 0;
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(this.prefix)) {
+                        size += localStorage.getItem(key).length;
+                    }
+                }
+                return size;
+            }
+            
+            // 清理旧缓存
+            cleanOldCache() {
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(this.prefix)) {
+                        keys.push(key);
+                    }
+                }
+                
+                // 删除一半最旧的缓存
+                keys.sort((a, b) => {
+                    const dataA = JSON.parse(localStorage.getItem(a) || '{}');
+                    const dataB = JSON.parse(localStorage.getItem(b) || '{}');
+                    return (dataA.timestamp || 0) - (dataB.timestamp || 0);
+                });
+                
+                const toRemove = keys.slice(0, Math.ceil(keys.length / 2));
+                toRemove.forEach(key => localStorage.removeItem(key));
+            }
+            
+            // 清除所有缓存
+            clearAll() {
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(this.prefix)) {
+                        keys.push(key);
+                    }
+                }
+                keys.forEach(key => localStorage.removeItem(key));
+            }
+            
+            // 获取缓存统计
+            getStats() {
+                let count = 0;
+                let size = 0;
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(this.prefix)) {
+                        count++;
+                        size += localStorage.getItem(key).length;
+                    }
+                }
+                return { count, size: (size / 1024).toFixed(1) + ' KB' };
+            }
+        }
+        
+        const cacheManager = new CacheManager();
+        
+        // ========== 请求队列管理器 ==========
+        class RequestQueue {
+            constructor(concurrentLimit = 3, delay = 300) {
+                this.concurrentLimit = concurrentLimit;
+                this.delay = delay;
+                this.queue = [];
+                this.running = 0;
+            }
+            
+            async add(requestFn) {
+                return new Promise((resolve, reject) => {
+                    this.queue.push({ requestFn, resolve, reject });
+                    this.process();
+                });
+            }
+            
+            async process() {
+                if (this.running >= this.concurrentLimit || this.queue.length === 0) {
+                    return;
+                }
+                
+                this.running++;
+                const { requestFn, resolve, reject } = this.queue.shift();
+                
+                try {
+                    const result = await requestFn();
+                    resolve(result);
+                } catch (error) {
+                    reject(error);
+                } finally {
+                    this.running--;
+                    await new Promise(r => setTimeout(r, this.delay));
+                    this.process();
+                }
+            }
+            
+            setConcurrentLimit(limit) {
+                this.concurrentLimit = limit;
+            }
+            
+            setDelay(delay) {
+                this.delay = delay;
+            }
+        }
+        
+        const requestQueue = new RequestQueue(
+            cacheManager.settings.concurrentLimit,
+            cacheManager.settings.requestDelay
+        );
+        
+        // ========== Legado规则解析器 ==========
         class AnalyzeRule {
             constructor() {
                 this.content = null;
@@ -391,7 +690,6 @@
             
             getString(rule) {
                 if (!rule) return '';
-                
                 let processedRule = rule;
                 const templatePattern = /\{\{\$?\.([^}]+)\}\}/g;
                 let match;
@@ -401,26 +699,18 @@
                     const value = this.getTemplateValue(fieldName);
                     processedRule = processedRule.replace(templateVar, value);
                 }
-                
                 if (processedRule !== rule) return processedRule;
-                
                 const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src'];
                 if (specialAttrs.includes(processedRule)) {
                     return this.applyRuleForString(processedRule, this.content) || '';
                 }
-                
                 if (this.content && typeof this.content === 'object' && !Array.isArray(this.content)) {
                     const value = this.content[processedRule];
-                    if (value != null) {
-                        return Array.isArray(value) ? value[0]?.toString() || '' : value.toString();
-                    }
+                    if (value != null) return Array.isArray(value) ? value[0]?.toString() || '' : value.toString();
                 }
-                
-                if (!processedRule.includes('@') && !processedRule.includes('$') && 
-                    !processedRule.includes('/') && !processedRule.includes('##')) {
+                if (!processedRule.includes('@') && !processedRule.includes('$') && !processedRule.includes('/') && !processedRule.includes('##')) {
                     return processedRule;
                 }
-                
                 const rules = this.splitRule(processedRule);
                 let currentValue = this.content;
                 for (const r of rules) {
@@ -432,10 +722,7 @@
             }
             
             getTemplateValue(fieldName) {
-                if (this.content && typeof this.content === 'object') {
-                    const value = this.content[fieldName];
-                    return value?.toString() || '';
-                }
+                if (this.content && typeof this.content === 'object') return this.content[fieldName]?.toString() || '';
                 return '';
             }
             
@@ -469,18 +756,15 @@
                         continue;
                     }
                     if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) {
-                        const path = r.replace(/^@json:/, '').replace(/^\$/, '');
-                        results.push(...this.evalJsonPath(path, input));
+                        results.push(...this.evalJsonPath(r.replace(/^@json:/, '').replace(/^\$/, ''), input));
                         continue;
                     }
                     if (r.startsWith('//') || r.startsWith('@xpath:')) {
-                        const xpath = r.replace(/^@xpath:/, '');
-                        results.push(...this.evalXPath(xpath, input));
+                        results.push(...this.evalXPath(r.replace(/^@xpath:/, ''), input));
                         continue;
                     }
                     if (r.startsWith('@regex:') || r.startsWith(':')) {
-                        const regex = r.replace(/^@regex:/, '').replace(/^:/, '');
-                        results.push(...this.evalRegexList(regex, input));
+                        results.push(...this.evalRegexList(r.replace(/^@regex:/, '').replace(/^:/, ''), input));
                         continue;
                     }
                     if (r.startsWith('@css:')) {
@@ -495,31 +779,17 @@
             applyRuleForString(rule, input) {
                 if (input == null) return '';
                 const r = rule.trim();
-                
                 if (r.startsWith('<js>') || r.startsWith('@js:')) {
                     const jsCode = r.startsWith('<js>') ? r.replace(/^<js>/, '').replace(/<\/js>$/, '') : r.replace(/^@js:/, '');
                     return this.evalJS(jsCode, input) || '';
                 }
-                if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) {
-                    return this.evalJsonPathSingle(r.replace(/^@json:/, ''), input);
-                }
-                if (r.startsWith('//') || r.startsWith('@xpath:')) {
-                    return this.evalXPathSingle(r.replace(/^@xpath:/, ''), input);
-                }
-                if (r.startsWith('@regex:') || r.startsWith(':')) {
-                    return this.evalRegexSingle(r.replace(/^@regex:/, '').replace(/^:/, ''), input);
-                }
-                if (r.startsWith('@css:')) {
-                    return this.evalCssSingle(r.replace(/^@css:/, ''), input);
-                }
-                
+                if (r.startsWith('$.') || r.startsWith('$[') || r.startsWith('@json:')) return this.evalJsonPathSingle(r.replace(/^@json:/, ''), input);
+                if (r.startsWith('//') || r.startsWith('@xpath:')) return this.evalXPathSingle(r.replace(/^@xpath:/, ''), input);
+                if (r.startsWith('@regex:') || r.startsWith(':')) return this.evalRegexSingle(r.replace(/^@regex:/, '').replace(/^:/, ''), input);
+                if (r.startsWith('@css:')) return this.evalCssSingle(r.replace(/^@css:/, ''), input);
                 const specialAttrs = ['text', 'text()', 'html', 'html()', 'ownText', 'href', 'src', 'data-src', 'content', 'alt', 'title', 'value', 'name'];
-                if (specialAttrs.includes(r.toLowerCase())) {
-                    return this.getAttribute(input, r.toLowerCase());
-                }
-                if ((r.match(/@/g) || []).length > 1) {
-                    return this.applyMultiAtRule(r, input);
-                }
+                if (specialAttrs.includes(r.toLowerCase())) return this.getAttribute(input, r.toLowerCase());
+                if ((r.match(/@/g) || []).length > 1) return this.applyMultiAtRule(r, input);
                 const { selector, attr } = this.parseSelectorAndAttr(r);
                 if (attr) return this.extractAttribute(selector, attr, input);
                 return this.evalLegadoSingle(r, input);
@@ -530,17 +800,14 @@
                 const lastAtIndex = rule.lastIndexOf('@');
                 if (lastAtIndex > 0) {
                     const possibleAttr = rule.substring(lastAtIndex + 1).toLowerCase();
-                    if (attrs.includes(possibleAttr) || possibleAttr.startsWith('data-')) {
-                        return { selector: rule.substring(0, lastAtIndex), attr: possibleAttr };
-                    }
+                    if (attrs.includes(possibleAttr) || possibleAttr.startsWith('data-')) return { selector: rule.substring(0, lastAtIndex), attr: possibleAttr };
                 }
                 return { selector: rule, attr: null };
             }
             
             applyMultiAtRule(rule, input) {
                 const parts = rule.split('@');
-                let current = input;
-                let currentElements = null;
+                let current = input, currentElements = null;
                 for (let i = 0; i < parts.length; i++) {
                     const part = parts[i].trim();
                     if (!part) continue;
@@ -552,10 +819,7 @@
                     } else {
                         const elementsToProcess = currentElements || [current].filter(e => e != null);
                         const newElements = [];
-                        for (const el of elementsToProcess) {
-                            const selector = this.convertLegadoToSelector(part);
-                            newElements.push(...this.selectElements(selector, el));
-                        }
+                        for (const el of elementsToProcess) newElements.push(...this.selectElements(this.convertLegadoToSelector(part), el));
                         currentElements = newElements;
                         current = newElements[0];
                     }
@@ -566,10 +830,7 @@
             
             extractAttribute(selector, attr, input) {
                 const elements = this.selectElements(this.convertLegadoToSelector(selector), input);
-                for (const el of elements) {
-                    const value = this.getAttribute(el, attr);
-                    if (value) return value;
-                }
+                for (const el of elements) { const value = this.getAttribute(el, attr); if (value) return value; }
                 return '';
             }
             
@@ -618,9 +879,7 @@
                     const parts = sel.split('@');
                     if (parts.length === 2) {
                         const afterAt = parts[1].toLowerCase();
-                        if (!attrNames.includes(afterAt) && !afterAt.startsWith('data-') && !afterAt.startsWith('js:')) {
-                            return parts[0] + ' ' + parts[1];
-                        }
+                        if (!attrNames.includes(afterAt) && !afterAt.startsWith('data-') && !afterAt.startsWith('js:')) return parts[0] + ' ' + parts[1];
                     }
                 }
                 if (sel.startsWith('class.')) sel = '.' + sel.substring(6);
@@ -638,23 +897,10 @@
                 try {
                     if (typeof input === 'string') {
                         if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
-                            try {
-                                const json = JSON.parse(input);
-                                const jsonResult = this.getJsonValue(json, rule);
-                                if (Array.isArray(jsonResult)) results.push(...jsonResult);
-                                else if (jsonResult != null) results.push(jsonResult);
-                            } catch (e) {}
-                        } else {
-                            const doc = new DOMParser().parseFromString(input, 'text/html');
-                            results.push(...Array.from(doc.querySelectorAll(selector)));
-                        }
-                    } else if (input?.querySelectorAll) {
-                        results.push(...Array.from(input.querySelectorAll(selector)));
-                    } else if (typeof input === 'object') {
-                        const jsonResult = this.getJsonValue(input, rule);
-                        if (Array.isArray(jsonResult)) results.push(...jsonResult);
-                        else if (jsonResult != null) results.push(jsonResult);
-                    }
+                            try { const json = JSON.parse(input); const jsonResult = this.getJsonValue(json, rule); if (Array.isArray(jsonResult)) results.push(...jsonResult); else if (jsonResult != null) results.push(jsonResult); } catch (e) {}
+                        } else { const doc = new DOMParser().parseFromString(input, 'text/html'); results.push(...Array.from(doc.querySelectorAll(selector))); }
+                    } else if (input?.querySelectorAll) results.push(...Array.from(input.querySelectorAll(selector)));
+                    else if (typeof input === 'object') { const jsonResult = this.getJsonValue(input, rule); if (Array.isArray(jsonResult)) results.push(...jsonResult); else if (jsonResult != null) results.push(jsonResult); }
                 } catch (e) {}
                 return results;
             }
@@ -665,38 +911,18 @@
                 const replaceRegex = parts[1];
                 const replacement = parts[2] || '';
                 let attr = null;
-                if (selector.includes('@')) {
-                    const attrParts = selector.split('@');
-                    if (attrParts.length === 2) { selector = attrParts[0]; attr = attrParts[1]; }
-                }
+                if (selector.includes('@')) { const attrParts = selector.split('@'); if (attrParts.length === 2) { selector = attrParts[0]; attr = attrParts[1]; } }
                 const cssSelector = this.convertLegadoToSelector(selector);
                 let result = '';
                 try {
                     if (typeof input === 'string') {
                         if (input.trim().startsWith('{') || input.trim().startsWith('[')) {
-                            try {
-                                const json = JSON.parse(input);
-                                result = this.getJsonValue(json, selector)?.toString() || '';
-                            } catch (e) {
-                                const doc = new DOMParser().parseFromString(input, 'text/html');
-                                const el = cssSelector ? doc.querySelector(cssSelector) : doc.body;
-                                result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : '';
-                            }
-                        } else {
-                            const doc = new DOMParser().parseFromString(input, 'text/html');
-                            const el = cssSelector ? doc.querySelector(cssSelector) : doc.body;
-                            result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : '';
-                        }
-                    } else if (input?.querySelector) {
-                        const el = cssSelector ? input.querySelector(cssSelector) : input;
-                        result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : '';
-                    } else if (typeof input === 'object') {
-                        result = this.getJsonValue(input, selector)?.toString() || '';
-                    }
+                            try { const json = JSON.parse(input); result = this.getJsonValue(json, selector)?.toString() || ''; } catch (e) { const doc = new DOMParser().parseFromString(input, 'text/html'); const el = cssSelector ? doc.querySelector(cssSelector) : doc.body; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; }
+                        } else { const doc = new DOMParser().parseFromString(input, 'text/html'); const el = cssSelector ? doc.querySelector(cssSelector) : doc.body; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; }
+                    } else if (input?.querySelector) { const el = cssSelector ? input.querySelector(cssSelector) : input; result = el ? (attr ? this.getAttribute(el, attr) : el.textContent) : ''; }
+                    else if (typeof input === 'object') result = this.getJsonValue(input, selector)?.toString() || '';
                 } catch (e) {}
-                if (replaceRegex) {
-                    try { result = result.replace(new RegExp(replaceRegex, 'g'), replacement); } catch (e) {}
-                }
+                if (replaceRegex) { try { result = result.replace(new RegExp(replaceRegex, 'g'), replacement); } catch (e) {} }
                 return result.trim();
             }
             
@@ -707,113 +933,40 @@
                 for (const key of keys) {
                     if (current == null) return null;
                     const arrayMatch = key.match(/^(\w+)\[(\d+)\]$/);
-                    if (arrayMatch) {
-                        const arrKey = arrayMatch[1];
-                        const index = parseInt(arrayMatch[2]);
-                        current = current[arrKey];
-                        if (Array.isArray(current)) current = current[index];
-                    } else if (Array.isArray(current)) {
-                        current = current.map(item => item?.[key]);
-                    } else {
-                        current = current?.[key];
-                    }
+                    if (arrayMatch) { const arrKey = arrayMatch[1]; const index = parseInt(arrayMatch[2]); current = current[arrKey]; if (Array.isArray(current)) current = current[index]; }
+                    else if (Array.isArray(current)) current = current.map(item => item?.[key]);
+                    else current = current?.[key];
                 }
                 return current;
             }
             
-            evalJsonPath(path, input) {
-                const results = [];
-                try {
-                    const json = typeof input === 'string' ? JSON.parse(input) : input;
-                    const value = this.getJsonValue(json, path);
-                    if (Array.isArray(value)) results.push(...value);
-                    else if (value != null) results.push(value);
-                } catch (e) {}
-                return results;
-            }
-            
-            evalJsonPathSingle(path, input) {
-                try {
-                    const json = typeof input === 'string' ? JSON.parse(input) : input;
-                    return this.getJsonValue(json, path)?.toString() || '';
-                } catch (e) { return ''; }
-            }
-            
+            evalJsonPath(path, input) { const results = []; try { const json = typeof input === 'string' ? JSON.parse(input) : input; const value = this.getJsonValue(json, path); if (Array.isArray(value)) results.push(...value); else if (value != null) results.push(value); } catch (e) {} return results; }
+            evalJsonPathSingle(path, input) { try { const json = typeof input === 'string' ? JSON.parse(input) : input; return this.getJsonValue(json, path)?.toString() || ''; } catch (e) { return ''; } }
             evalXPath(xpath, input) { return this.evalCss(this.xpathToCss(xpath), input); }
             evalXPathSingle(xpath, input) { return this.evalCssSingle(this.xpathToCss(xpath), input); }
-            
-            xpathToCss(xpath) {
-                let css = xpath.replace(/^\/\//, '');
-                css = css.replace(/\/@[\w]+$/, '');
-                css = css.replace(/\//g, ' > ');
-                css = css.replace(/\[@class=['"]([^'"]+)['"]\]/g, '.$1');
-                css = css.replace(/\[@id=['"]([^'"]+)['"]\]/g, '#$1');
-                css = css.replace(/\[@(\w+)=['"]([^'"]+)['"]\]/g, '[$1="$2"]');
-                return css;
-            }
-            
-            evalCss(css, input) {
-                const results = [];
-                try {
-                    if (typeof input === 'string') {
-                        const doc = new DOMParser().parseFromString(input, 'text/html');
-                        results.push(...Array.from(doc.querySelectorAll(css)));
-                    } else if (input?.querySelectorAll) {
-                        results.push(...Array.from(input.querySelectorAll(css)));
-                    }
-                } catch (e) {}
-                return results;
-            }
-            
-            evalCssSingle(css, input) {
-                try {
-                    if (typeof input === 'string') {
-                        const doc = new DOMParser().parseFromString(input, 'text/html');
-                        return doc.querySelector(css)?.textContent || '';
-                    } else if (input?.querySelector) {
-                        return input.querySelector(css)?.textContent || '';
-                    }
-                } catch (e) {}
-                return '';
-            }
-            
-            evalRegexList(regex, input) {
-                try {
-                    const p = new RegExp(regex);
-                    const m = p.exec(input?.toString() || '');
-                    if (m) return m.slice(1).filter(g => g != null);
-                } catch (e) {}
-                return [];
-            }
-            
-            evalRegexSingle(regex, input) {
-                try {
-                    const m = new RegExp(regex).exec(input?.toString() || '');
-                    if (m) return m[1] || m[0] || '';
-                } catch (e) {}
-                return '';
-            }
-            
-            evalJS(code, input) {
-                try {
-                    const func = new Function('result', 'src', 'baseUrl', 'java', code);
-                    return func(input, this.content, this.baseUrl, {
-                        log: console.log,
-                        ajax: (url) => fetchHtmlSync(url),
-                        get: (url) => fetchHtmlSync(url),
-                        getString: (rule) => new AnalyzeRule().setContent(this.content, this.baseUrl).getString(rule)
-                    });
-                } catch (e) {
-                    console.error('JS执行错误:', e);
-                    return null;
-                }
-            }
+            xpathToCss(xpath) { let css = xpath.replace(/^\/\//, ''); css = css.replace(/\/@[\w]+$/, ''); css = css.replace(/\//g, ' > '); css = css.replace(/\[@class=['"]([^'"]+)['"]\]/g, '.$1'); css = css.replace(/\[@id=['"]([^'"]+)['"]\]/g, '#$1'); css = css.replace(/\[@(\w+)=['"]([^'"]+)['"]\]/g, '[$1="$2"]'); return css; }
+            evalCss(css, input) { const results = []; try { if (typeof input === 'string') { const doc = new DOMParser().parseFromString(input, 'text/html'); results.push(...Array.from(doc.querySelectorAll(css))); } else if (input?.querySelectorAll) results.push(...Array.from(input.querySelectorAll(css))); } catch (e) {} return results; }
+            evalCssSingle(css, input) { try { if (typeof input === 'string') { const doc = new DOMParser().parseFromString(input, 'text/html'); return doc.querySelector(css)?.textContent || ''; } else if (input?.querySelector) return input.querySelector(css)?.textContent || ''; } catch (e) {} return ''; }
+            evalRegexList(regex, input) { try { const p = new RegExp(regex); const m = p.exec(input?.toString() || ''); if (m) return m.slice(1).filter(g => g != null); } catch (e) {} return []; }
+            evalRegexSingle(regex, input) { try { const m = new RegExp(regex).exec(input?.toString() || ''); if (m) return m[1] || m[0] || ''; } catch (e) {} return ''; }
+            evalJS(code, input) { try { const func = new Function('result', 'src', 'baseUrl', 'java', code); return func(input, this.content, this.baseUrl, { log: console.log, ajax: (url) => fetchHtmlSync(url), get: (url) => fetchHtmlSync(url), getString: (rule) => new AnalyzeRule().setContent(this.content, this.baseUrl).getString(rule) }); } catch (e) { console.error('JS执行错误:', e); return null; } }
         }
         
-        // ========== HTTP请求 ==========
-        async function fetchHtml(url, headers = {}) {
-            try {
-                // 尝试多个CORS代理
+        // ========== 优化的HTTP请求 ==========
+        async function fetchHtml(url, useCache = true) {
+            // 先检查缓存
+            if (useCache) {
+                const cached = cacheManager.get(url);
+                if (cached) {
+                    updateCacheInfo();
+                    return { content: cached, success: true, url, fromCache: true };
+                }
+            }
+            
+            // 使用请求队列
+            return requestQueue.add(async () => {
+                cacheManager.incrementRequest();
+                
                 const proxies = [
                     `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
                     `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -822,24 +975,24 @@
                 
                 for (const proxyUrl of proxies) {
                     try {
-                        const response = await fetch(proxyUrl, { 
-                            headers: { 'User-Agent': 'Mozilla/5.0' },
-                            signal: AbortSignal.timeout(15000)
-                        });
+                        const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
                         const data = await response.json();
                         if (data.contents || data) {
                             const content = data.contents || (typeof data === 'string' ? data : JSON.stringify(data));
-                            return { content, success: true, url };
+                            
+                            // 存入缓存
+                            if (useCache) {
+                                cacheManager.set(url, content);
+                            }
+                            
+                            updateCacheInfo();
+                            return { content, success: true, url, fromCache: false };
                         }
-                    } catch (e) {
-                        continue;
-                    }
+                    } catch (e) { continue; }
                 }
                 
                 return { content: '', success: false, error: '所有代理都失败', url };
-            } catch (e) {
-                return { content: '', success: false, error: e.message, url };
-            }
+            });
         }
         
         // ========== 应用状态 ==========
@@ -856,13 +1009,14 @@
             loadSources();
             renderHistory();
             updateSourceSelect();
+            loadSettingsUI();
+            updateStats();
+            updateCacheInfo();
         }
         
         function loadSources() {
             const saved = localStorage.getItem('bookSources');
-            if (saved) {
-                try { bookSources = JSON.parse(saved); } catch (e) { bookSources = []; }
-            }
+            if (saved) { try { bookSources = JSON.parse(saved); } catch (e) { bookSources = []; } }
             updateSourceCount();
             renderSourceList();
         }
@@ -881,11 +1035,22 @@
         function updateSourceSelect() {
             const select = document.getElementById('sourceSelect');
             select.innerHTML = '<option value="">全部书源</option>';
-            bookSources.forEach((s, i) => {
-                if (s.enabled !== false) {
-                    select.innerHTML += `<option value="${i}">${s.bookSourceName}</option>`;
-                }
-            });
+            bookSources.forEach((s, i) => { if (s.enabled !== false) select.innerHTML += `<option value="${i}">${s.bookSourceName}</option>`; });
+        }
+        
+        function updateStats() {
+            document.getElementById('totalRequests').textContent = cacheManager.stats.totalRequests;
+            document.getElementById('cacheHits').textContent = cacheManager.stats.cacheHits;
+            document.getElementById('savedRequests').textContent = cacheManager.stats.savedRequests;
+        }
+        
+        function updateCacheInfo() {
+            const stats = cacheManager.getStats();
+            const info = document.getElementById('cacheInfo');
+            if (info) {
+                info.innerHTML = `<h4>缓存状态</h4><p>已缓存 ${stats.count} 个页面，占用 ${stats.size}</p>`;
+            }
+            updateStats();
         }
         
         function showToast(msg, isError = false) {
@@ -901,29 +1066,69 @@
             event.target.classList.add('active');
             document.getElementById('searchTab').classList.toggle('hidden', tab !== 'search');
             document.getElementById('sourcesTab').classList.toggle('hidden', tab !== 'sources');
+            document.getElementById('settingsTab').classList.toggle('hidden', tab !== 'settings');
             document.getElementById('historyTab').classList.toggle('hidden', tab !== 'history');
-            document.getElementById('helpTab').classList.toggle('hidden', tab !== 'help');
             if (tab === 'sources') renderSourceList();
             if (tab === 'history') renderHistory();
+            if (tab === 'settings') { loadSettingsUI(); updateStats(); showCacheStats(); }
+        }
+        
+        // ========== 设置 ==========
+        
+        function loadSettingsUI() {
+            document.getElementById('concurrentLimit').value = cacheManager.settings.concurrentLimit;
+            document.getElementById('requestDelay').value = cacheManager.settings.requestDelay;
+            document.getElementById('cacheExpire').value = cacheManager.settings.cacheExpire;
+            document.getElementById('enableCache').checked = cacheManager.settings.enableCache;
+            document.getElementById('enableCompress').checked = cacheManager.settings.enableCompress;
+        }
+        
+        function saveSettings() {
+            cacheManager.saveSettings({
+                concurrentLimit: parseInt(document.getElementById('concurrentLimit').value),
+                requestDelay: parseInt(document.getElementById('requestDelay').value),
+                cacheExpire: parseInt(document.getElementById('cacheExpire').value),
+                enableCache: document.getElementById('enableCache').checked,
+                enableCompress: document.getElementById('enableCompress').checked
+            });
+            
+            requestQueue.setConcurrentLimit(cacheManager.settings.concurrentLimit);
+            requestQueue.setDelay(cacheManager.settings.requestDelay);
+            
+            showToast('设置已保存');
+        }
+        
+        function clearCache() {
+            if (confirm('确定清除所有缓存？')) {
+                cacheManager.clearAll();
+                updateCacheInfo();
+                showToast('缓存已清除');
+            }
+        }
+        
+        function showCacheStats() {
+            const stats = cacheManager.getStats();
+            const info = document.getElementById('settingsCacheInfo');
+            info.innerHTML = `<h4>缓存统计</h4><p>缓存条目: ${stats.count}</p><p>占用空间: ${stats.size}</p>`;
+        }
+        
+        function resetStats() {
+            cacheManager.stats = { totalRequests: 0, cacheHits: 0, savedRequests: 0 };
+            cacheManager.saveStats();
+            updateStats();
+            showToast('统计已重置');
         }
         
         // ========== 书源管理 ==========
         
         function renderSourceList() {
             const list = document.getElementById('sourceList');
-            if (!bookSources.length) {
-                list.innerHTML = '<p class="loading">暂无书源，请导入</p>';
-                return;
-            }
+            if (!bookSources.length) { list.innerHTML = '<p class="loading">暂无书源，请导入</p>'; return; }
             list.innerHTML = bookSources.map((s, i) => `
                 <div class="source-item ${s.enabled === false ? 'disabled' : ''}">
-                    <div>
-                        <div class="name">${s.bookSourceName}</div>
-                        <div class="url">${s.bookSourceUrl}</div>
-                    </div>
+                    <div><div class="name">${s.bookSourceName}</div><div class="url">${s.bookSourceUrl}</div></div>
                     <div class="btn-group">
                         <button class="btn btn-small ${s.enabled !== false ? 'btn-success' : 'btn-secondary'}" onclick="toggleSource(${i})">${s.enabled !== false ? '✓' : '✗'}</button>
-                        <button class="btn btn-secondary btn-small" onclick="testSource(${i})">测试</button>
                         <button class="btn btn-danger btn-small" onclick="deleteSource(${i})">删除</button>
                     </div>
                 </div>
@@ -932,38 +1137,17 @@
         
         function importSources() {
             const input = document.getElementById('sourceInput').value.trim();
-            if (!input) {
-                showToast('请输入JSON内容或URL', true);
-                return;
-            }
-            
-            // 检查是否是URL
-            if (input.startsWith('http://') || input.startsWith('https://')) {
-                importFromUrlDirect(input);
-                return;
-            }
-            
-            try {
-                const data = JSON.parse(input);
-                processImportData(data);
-            } catch (e) {
-                showToast('JSON格式错误: ' + e.message, true);
-            }
+            if (!input) { showToast('请输入JSON内容或URL', true); return; }
+            if (input.startsWith('http://') || input.startsWith('https://')) { importFromUrlDirect(input); return; }
+            try { const data = JSON.parse(input); processImportData(data); } catch (e) { showToast('JSON格式错误: ' + e.message, true); }
         }
         
         async function importFromUrlDirect(url) {
             const statusDiv = document.getElementById('importStatus');
             statusDiv.classList.remove('hidden');
             statusDiv.innerHTML = '正在从URL获取书源...';
-            
             try {
-                // 尝试多个代理
-                const proxies = [
-                    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-                    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
-                ];
-                
+                const proxies = [`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, `https://corsproxy.io/?${encodeURIComponent(url)}`, `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`];
                 let data = null;
                 for (const proxyUrl of proxies) {
                     try {
@@ -974,44 +1158,22 @@
                         const jsonStr = typeof content === 'string' ? content : JSON.stringify(content);
                         data = JSON.parse(jsonStr);
                         break;
-                    } catch (e) {
-                        statusDiv.innerHTML += `<br>失败: ${e.message}`;
-                        continue;
-                    }
+                    } catch (e) { statusDiv.innerHTML += `<br>失败: ${e.message}`; continue; }
                 }
-                
-                if (data) {
-                    processImportData(data);
-                    statusDiv.innerHTML = '导入成功！';
-                } else {
-                    statusDiv.innerHTML = '所有代理都失败，请尝试手动复制JSON内容';
-                    showToast('获取书源失败', true);
-                }
-            } catch (e) {
-                statusDiv.innerHTML = '错误: ' + e.message;
-                showToast('导入失败: ' + e.message, true);
-            }
+                if (data) { processImportData(data); statusDiv.innerHTML = '导入成功！'; }
+                else { statusDiv.innerHTML = '所有代理都失败'; showToast('获取书源失败', true); }
+            } catch (e) { statusDiv.innerHTML = '错误: ' + e.message; showToast('导入失败: ' + e.message, true); }
         }
         
         function processImportData(data) {
             const sources = Array.isArray(data) ? data : [data];
-            let added = 0;
-            let updated = 0;
-            
+            let added = 0, updated = 0;
             sources.forEach(s => {
                 if (!s.bookSourceName || !s.bookSourceUrl) return;
-                
                 const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
-                
-                if (existingIndex >= 0) {
-                    bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: true };
-                    updated++;
-                } else {
-                    bookSources.push({ ...s, enabled: true });
-                    added++;
-                }
+                if (existingIndex >= 0) { bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: true }; updated++; }
+                else { bookSources.push({ ...s, enabled: true }); added++; }
             });
-            
             saveSources();
             renderSourceList();
             document.getElementById('sourceInput').value = '';
@@ -1021,92 +1183,42 @@
         function importFromFile(event) {
             const file = event.target.files[0];
             if (!file) return;
-            
             const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('sourceInput').value = e.target.result;
-                importSources();
-            };
+            reader.onload = function(e) { document.getElementById('sourceInput').value = e.target.result; importSources(); };
             reader.readAsText(file);
         }
         
-        async function importFromUrl() {
+        function importFromUrl() {
             const url = prompt('请输入书源JSON的URL:', 'https://www.yckceo.com/yuedu/shuyuans/json/id/1063.json');
-            if (!url) return;
-            
-            importFromUrlDirect(url);
+            if (url) importFromUrlDirect(url);
         }
         
-        function toggleSource(index) {
-            bookSources[index].enabled = bookSources[index].enabled === false ? true : false;
-            saveSources();
-            renderSourceList();
-        }
-        
-        function deleteSource(index) {
-            if (confirm('确定删除此书源？')) {
-                bookSources.splice(index, 1);
-                saveSources();
-                renderSourceList();
-                showToast('已删除');
-            }
-        }
-        
-        async function testSource(index) {
-            const source = bookSources[index];
-            showToast(`正在测试 ${source.bookSourceName}...`);
-            
-            try {
-                const searchUrl = (source.searchUrl || '').replace('{{key}}', '斗罗').replace('{{page}}', '1');
-                const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
-                const result = await fetchHtml(fullUrl);
-                
-                if (result.success) {
-                    const rule = source.ruleSearch || {};
-                    const parser = new AnalyzeRule().setContent(result.content, result.url);
-                    const items = parser.getElements(rule.bookList);
-                    
-                    if (items.length > 0) {
-                        showToast(`${source.bookSourceName} 测试成功，找到 ${items.length} 个结果`);
-                        sourceTestResults[source.bookSourceUrl] = true;
-                        source.respondTime = Date.now();
-                        saveSources();
-                    } else {
-                        showToast(`${source.bookSourceName} 未找到结果`, true);
-                        sourceTestResults[source.bookSourceUrl] = false;
-                    }
-                } else {
-                    showToast(`${source.bookSourceName} 请求失败`, true);
-                    sourceTestResults[source.bookSourceUrl] = false;
-                }
-            } catch (e) {
-                showToast(`${source.bookSourceName} 测试失败: ${e.message}`, true);
-                sourceTestResults[source.bookSourceUrl] = false;
-            }
-        }
+        function toggleSource(index) { bookSources[index].enabled = bookSources[index].enabled === false ? true : false; saveSources(); renderSourceList(); }
+        function deleteSource(index) { if (confirm('确定删除此书源？')) { bookSources.splice(index, 1); saveSources(); renderSourceList(); showToast('已删除'); } }
         
         async function testAllSources() {
             showToast('开始测试所有书源...');
-            
             for (let i = 0; i < bookSources.length; i++) {
-                await testSource(i);
+                const source = bookSources[i];
+                try {
+                    const searchUrl = (source.searchUrl || '').replace('{{key}}', '斗罗').replace('{{page}}', '1');
+                    const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
+                    const result = await fetchHtml(fullUrl, false);
+                    if (result.success) {
+                        const rule = source.ruleSearch || {};
+                        const parser = new AnalyzeRule().setContent(result.content, result.url);
+                        const items = parser.getElements(rule.bookList);
+                        sourceTestResults[source.bookSourceUrl] = items.length > 0;
+                    } else sourceTestResults[source.bookSourceUrl] = false;
+                } catch (e) { sourceTestResults[source.bookSourceUrl] = false; }
             }
-            
             const failedCount = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] === false).length;
-            if (failedCount > 0) {
-                showToast(`测试完成，${failedCount} 个书源无效`);
-            } else {
-                showToast('所有书源测试通过！');
-            }
+            showToast(failedCount > 0 ? `测试完成，${failedCount} 个书源无效` : '所有书源测试通过！');
         }
         
         function clearInvalidSources() {
             const invalidCount = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] === false).length;
-            if (invalidCount === 0) {
-                showToast('没有无效书源');
-                return;
-            }
-            
+            if (invalidCount === 0) { showToast('没有无效书源'); return; }
             if (confirm(`确定删除 ${invalidCount} 个无效书源？`)) {
                 bookSources = bookSources.filter(s => sourceTestResults[s.bookSourceUrl] !== false);
                 saveSources();
@@ -1116,41 +1228,16 @@
         }
         
         function loadDefaultSources() {
-            const defaults = [
-                {
-                    bookSourceName: "笔趣阁",
-                    bookSourceUrl: "https://www.biquge.com",
-                    searchUrl: "/search.php?keyword={{key}}",
-                    enabled: true,
-                    ruleSearch: {
-                        bookList: ".result-list .result-item",
-                        name: ".result-game-item-title a",
-                        author: ".result-game-item-info-tag:eq(0) span",
-                        bookUrl: ".result-game-item-title a@href"
-                    },
-                    ruleToc: { chapterList: "#list dl dd a", chapterName: "text", chapterUrl: "href" },
-                    ruleContent: { content: "#content" }
-                }
-            ];
-            
+            const defaults = [{ bookSourceName: "笔趣阁", bookSourceUrl: "https://www.biquge.com", searchUrl: "/search.php?keyword={{key}}", enabled: true, ruleSearch: { bookList: ".result-list .result-item", name: ".result-game-item-title a", author: ".result-game-item-info-tag:eq(0) span", bookUrl: ".result-game-item-title a@href" }, ruleToc: { chapterList: "#list dl dd a", chapterName: "text", chapterUrl: "href" }, ruleContent: { content: "#content" } }];
             let added = 0;
-            defaults.forEach(s => {
-                if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) {
-                    bookSources.push({ ...s });
-                    added++;
-                }
-            });
-            
+            defaults.forEach(s => { if (!bookSources.some(existing => existing.bookSourceUrl === s.bookSourceUrl)) { bookSources.push({ ...s }); added++; } });
             saveSources();
             renderSourceList();
             showToast(`已加载 ${added} 个默认书源`);
         }
         
         function exportSources() {
-            if (!bookSources.length) {
-                showToast('没有书源可导出', true);
-                return;
-            }
+            if (!bookSources.length) { showToast('没有书源可导出', true); return; }
             const json = JSON.stringify(bookSources, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -1162,13 +1249,7 @@
             showToast('已导出');
         }
         
-        function clearSources() {
-            if (!confirm('确定要清空所有书源吗？')) return;
-            bookSources = [];
-            saveSources();
-            renderSourceList();
-            showToast('已清空');
-        }
+        function clearSources() { if (confirm('确定要清空所有书源吗？')) { bookSources = []; saveSources(); renderSourceList(); showToast('已清空'); } }
         
         // ========== 搜索 ==========
         
@@ -1176,128 +1257,78 @@
             e.preventDefault();
             const keyword = document.getElementById('searchInput').value.trim();
             if (!keyword) return;
-            
             const enabledSources = bookSources.filter(s => s.enabled !== false && s.searchUrl);
-            if (!enabledSources.length) {
-                showToast('请先添加书源', true);
-                return;
-            }
-            
+            if (!enabledSources.length) { showToast('请先添加书源', true); return; }
             const btn = document.getElementById('searchBtn');
             btn.disabled = true;
             btn.textContent = '搜索中...';
-            
             searchResults = [];
-            
             const sourceIdx = document.getElementById('sourceSelect').value;
             const sourcesToSearch = sourceIdx !== '' ? [enabledSources[parseInt(sourceIdx)]] : enabledSources;
-            
             const statusDiv = document.getElementById('searchStatus');
             statusDiv.classList.remove('hidden');
-            statusDiv.innerHTML = sourcesToSearch.map(s => 
-                `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`
-            ).join('');
+            statusDiv.innerHTML = sourcesToSearch.map(s => `<div class="source-status loading" id="status-${s.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}">${s.bookSourceName}: 等待中</div>`).join('');
             
-            const searchPromises = sourcesToSearch.map(async (source) => {
-                const statusId = `status-${source.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                const statusEl = document.getElementById(statusId);
-                
-                try {
-                    statusEl.className = 'source-status loading';
-                    statusEl.textContent = `${source.bookSourceName}: 搜索中...`;
-                    
-                    const searchUrl = (source.searchUrl || '').replace('{{key}}', encodeURIComponent(keyword)).replace('{{page}}', '1');
-                    const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
-                    
-                    const result = await fetchHtml(fullUrl);
-                    
-                    if (!result.success) {
-                        statusEl.className = 'source-status error';
-                        statusEl.textContent = `${source.bookSourceName}: 请求失败`;
-                        return [];
-                    }
-                    
-                    const rule = source.ruleSearch || {};
-                    const parser = new AnalyzeRule().setContent(result.content, result.url);
-                    const items = parser.getElements(rule.bookList);
-                    
-                    const books = items.map(item => {
-                        const r = new AnalyzeRule().setContent(item, result.url);
-                        const name = r.getString(rule.name);
-                        if (!name) return null;
-                        
-                        let bookUrl = r.getString(rule.bookUrl);
-                        if (bookUrl && !bookUrl.startsWith('http')) bookUrl = resolveUrl(source.bookSourceUrl, bookUrl);
-                        
-                        return {
-                            name,
-                            author: r.getString(rule.author),
-                            bookUrl,
-                            coverUrl: (() => {
-                                const cover = r.getString(rule.coverUrl);
-                                return cover && !cover.startsWith('http') ? resolveUrl(source.bookSourceUrl, cover) : cover;
-                            })(),
-                            intro: r.getString(rule.intro),
-                            kind: r.getString(rule.kind),
-                            lastChapter: r.getString(rule.lastChapter),
-                            sourceName: source.bookSourceName,
-                            sourceUrl: source.bookSourceUrl,
-                            source
-                        };
-                    }).filter(b => b && b.name && b.bookUrl);
-                    
-                    statusEl.className = 'source-status success';
-                    statusEl.textContent = `${source.bookSourceName}: ${books.length}个`;
-                    return books;
-                } catch (err) {
-                    statusEl.className = 'source-status error';
-                    statusEl.textContent = `${source.bookSourceName}: ${err.message}`;
-                    return [];
-                }
-            });
+            // 并发限制搜索
+            const searchPromises = [];
+            const limit = cacheManager.settings.concurrentLimit;
+            for (let i = 0; i < sourcesToSearch.length; i += limit) {
+                const batch = sourcesToSearch.slice(i, i + limit);
+                searchPromises.push(...batch.map(source => searchSource(source, keyword)));
+            }
             
             const allResults = await Promise.all(searchPromises);
             searchResults = allResults.flat();
             
             const seen = new Set();
-            searchResults = searchResults.filter(book => {
-                const key = `${book.name}-${book.author}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
+            searchResults = searchResults.filter(book => { const key = `${book.name}-${book.author}`; if (seen.has(key)) return false; seen.add(key); return true; });
             
-            if (searchResults.length > 0) {
-                displayResults(searchResults.slice(0, 50));
-                showToast(`找到 ${searchResults.length} 个结果`);
-            } else {
-                showToast('未找到结果', true);
-            }
+            if (searchResults.length > 0) { displayResults(searchResults.slice(0, 50)); showToast(`找到 ${searchResults.length} 个结果`); }
+            else showToast('未找到结果', true);
             
             btn.disabled = false;
             btn.textContent = '搜索';
         });
         
+        async function searchSource(source, keyword) {
+            const statusId = `status-${source.bookSourceName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const statusEl = document.getElementById(statusId);
+            try {
+                statusEl.className = 'source-status loading';
+                statusEl.textContent = `${source.bookSourceName}: 搜索中...`;
+                const searchUrl = (source.searchUrl || '').replace('{{key}}', encodeURIComponent(keyword)).replace('{{page}}', '1');
+                const fullUrl = searchUrl.startsWith('http') ? searchUrl : source.bookSourceUrl + searchUrl;
+                const result = await fetchHtml(fullUrl);
+                if (!result.success) { statusEl.className = 'source-status error'; statusEl.textContent = `${source.bookSourceName}: 请求失败`; return []; }
+                const rule = source.ruleSearch || {};
+                const parser = new AnalyzeRule().setContent(result.content, result.url);
+                const items = parser.getElements(rule.bookList);
+                const books = items.map(item => {
+                    const r = new AnalyzeRule().setContent(item, result.url);
+                    const name = r.getString(rule.name);
+                    if (!name) return null;
+                    let bookUrl = r.getString(rule.bookUrl);
+                    if (bookUrl && !bookUrl.startsWith('http')) bookUrl = resolveUrl(source.bookSourceUrl, bookUrl);
+                    return { name, author: r.getString(rule.author), bookUrl, intro: r.getString(rule.intro), kind: r.getString(rule.kind), lastChapter: r.getString(rule.lastChapter), sourceName: source.bookSourceName, sourceUrl: source.bookSourceUrl, source };
+                }).filter(b => b && b.name && b.bookUrl);
+                statusEl.className = 'source-status success';
+                statusEl.textContent = `${source.bookSourceName}: ${books.length}个${result.fromCache ? '(缓存)' : ''}`;
+                return books;
+            } catch (err) { statusEl.className = 'source-status error'; statusEl.textContent = `${source.bookSourceName}: ${err.message}`; return []; }
+        }
+        
         function resolveUrl(base, relative) {
             if (!relative) return '';
             if (relative.startsWith('http')) return relative;
             if (relative.startsWith('//')) return 'https:' + relative;
-            if (relative.startsWith('/')) {
-                try { return new URL(base).origin + relative; } catch (e) { return relative; }
-            }
+            if (relative.startsWith('/')) { try { return new URL(base).origin + relative; } catch (e) { return relative; } }
             try { return new URL(relative, base).href; } catch (e) { return relative; }
         }
         
         function displayResults(results) {
             const list = document.getElementById('bookList');
             document.getElementById('resultCount').textContent = `(${results.length})`;
-            list.innerHTML = results.map((book, i) => `
-                <div class="book-item" onclick="selectBook(${i})">
-                    <h3>《${book.name}》</h3>
-                    <div class="meta">${book.author ? '作者: ' + book.author + ' | ' : ''}来源: ${book.sourceName}</div>
-                    ${book.intro ? `<div class="intro">${book.intro}</div>` : ''}
-                </div>
-            `).join('');
+            list.innerHTML = results.map((book, i) => `<div class="book-item" onclick="selectBook(${i})"><h3>《${book.name}》</h3><div class="meta">${book.author ? '作者: ' + book.author + ' | ' : ''}来源: ${book.sourceName}</div>${book.intro ? `<div class="intro">${book.intro}</div>` : ''}</div>`).join('');
             document.getElementById('resultsCard').classList.remove('hidden');
             document.getElementById('bookInfoCard').classList.add('hidden');
             document.getElementById('downloadCard').classList.add('hidden');
@@ -1307,19 +1338,12 @@
             document.querySelectorAll('.book-item').forEach((item, i) => item.classList.toggle('selected', i === index));
             selectedBook = searchResults[index];
             selectedSource = selectedBook.source;
-            
-            document.getElementById('bookInfo').innerHTML = `
-                <h3>《${selectedBook.name}》</h3>
-                <p style="color:rgba(255,255,255,0.6);margin-top:4px">${selectedBook.author ? '作者: ' + selectedBook.author : ''}</p>
-                <div class="loading" id="bookLoading">正在获取书籍信息...</div>
-            `;
+            document.getElementById('bookInfo').innerHTML = `<h3>《${selectedBook.name}》</h3><p style="color:rgba(255,255,255,0.6);margin-top:4px">${selectedBook.author ? '作者: ' + selectedBook.author : ''}</p><div class="loading" id="bookLoading">正在获取书籍信息...</div>`;
             document.getElementById('bookInfoCard').classList.remove('hidden');
             document.getElementById('chapterListSection').classList.add('hidden');
             document.getElementById('downloadActions').classList.add('hidden');
-            
             try {
                 const bookResult = await fetchHtml(selectedBook.bookUrl);
-                
                 if (bookResult.success && selectedSource.ruleBookInfo) {
                     const infoRules = selectedSource.ruleBookInfo;
                     const parser = new AnalyzeRule().setContent(bookResult.content, bookResult.url);
@@ -1328,10 +1352,7 @@
                     let tocUrl = parser.getString(infoRules.tocUrl);
                     if (tocUrl && !tocUrl.startsWith('http')) tocUrl = resolveUrl(selectedSource.bookSourceUrl, tocUrl);
                     selectedBook.tocUrl = tocUrl || selectedBook.bookUrl;
-                } else {
-                    selectedBook.tocUrl = selectedBook.bookUrl;
-                }
-                
+                } else selectedBook.tocUrl = selectedBook.bookUrl;
                 chapters = [];
                 if (selectedSource.ruleToc) {
                     const tocResult = await fetchHtml(selectedBook.tocUrl);
@@ -1347,49 +1368,24 @@
                         }).filter(ch => ch.name && ch.url);
                     }
                 }
-                
                 document.getElementById('bookLoading').classList.add('hidden');
-                document.getElementById('bookInfo').innerHTML = `
-                    <h3>《${selectedBook.name}》</h3>
-                    <p style="color:rgba(255,255,255,0.6);margin-top:4px">${selectedBook.author ? '作者: ' + selectedBook.author : ''}</p>
-                    ${selectedBook.intro ? `<p style="color:rgba(255,255,255,0.5);margin-top:8px;font-size:0.85rem">${selectedBook.intro.substring(0, 200)}...</p>` : ''}
-                `;
-                
+                document.getElementById('bookInfo').innerHTML = `<h3>《${selectedBook.name}》</h3><p style="color:rgba(255,255,255,0.6);margin-top:4px">${selectedBook.author ? '作者: ' + selectedBook.author : ''}</p>${selectedBook.intro ? `<p style="color:rgba(255,255,255,0.5);margin-top:8px;font-size:0.85rem">${selectedBook.intro.substring(0, 200)}...</p>` : ''}`;
                 if (chapters.length > 0) {
                     document.getElementById('chapterCount').textContent = `(${chapters.length})`;
-                    document.getElementById('chapterList').innerHTML = chapters.map((ch, i) => `
-                        <div class="chapter-item" onclick="toggleChapter(${i})">
-                            <input type="checkbox" id="ch${i}" ${ch.selected ? 'checked' : ''}>
-                            <label for="ch${i}">${ch.name}</label>
-                        </div>
-                    `).join('');
+                    document.getElementById('chapterList').innerHTML = chapters.map((ch, i) => `<div class="chapter-item" onclick="toggleChapter(${i})"><input type="checkbox" id="ch${i}" ${ch.selected ? 'checked' : ''}><label for="ch${i}">${ch.name}</label></div>`).join('');
                     document.getElementById('chapterListSection').classList.remove('hidden');
                     document.getElementById('downloadActions').classList.remove('hidden');
-                } else {
-                    showToast('未找到章节列表', true);
-                }
-            } catch (err) {
-                document.getElementById('bookLoading').textContent = '获取失败: ' + err.message;
-                showToast('获取书籍信息失败', true);
-            }
+                } else showToast('未找到章节列表', true);
+            } catch (err) { document.getElementById('bookLoading').textContent = '获取失败: ' + err.message; showToast('获取书籍信息失败', true); }
         }
         
-        function toggleChapter(index) {
-            chapters[index].selected = !chapters[index].selected;
-            document.getElementById('ch' + index).checked = chapters[index].selected;
-        }
-        
+        function toggleChapter(index) { chapters[index].selected = !chapters[index].selected; document.getElementById('ch' + index).checked = chapters[index].selected; }
         function selectAllChapters() { chapters.forEach((ch, i) => { ch.selected = true; document.getElementById('ch' + i).checked = true; }); }
         function deselectAllChapters() { chapters.forEach((ch, i) => { ch.selected = false; document.getElementById('ch' + i).checked = false; }); }
         
         // ========== 下载 ==========
         
-        async function downloadSelected() {
-            const selected = chapters.filter(ch => ch.selected);
-            if (!selected.length) { showToast('请先选择章节', true); return; }
-            await downloadChapters(selected);
-        }
-        
+        async function downloadSelected() { const selected = chapters.filter(ch => ch.selected); if (!selected.length) { showToast('请先选择章节', true); return; } await downloadChapters(selected); }
         async function downloadAll() { await downloadChapters(chapters.slice(0, 500)); }
         
         async function downloadChapters(chaptersToDownload) {
@@ -1399,19 +1395,17 @@
             document.getElementById('saveActions').classList.add('hidden');
             document.getElementById('downloadLog').innerHTML = '';
             downloadedContent = '';
-            
             const contentRule = selectedSource.ruleContent?.content || '#content';
             downloadedContent = `书名: ${selectedBook.name}\n作者: ${selectedBook.author || '未知'}\n来源: ${selectedBook.sourceName}\n下载时间: ${new Date().toLocaleString()}\n\n${'='.repeat(50)}\n\n`;
-            
             let success = 0, fail = 0;
             const logPanel = document.getElementById('downloadLog');
+            const delay = cacheManager.settings.requestDelay;
             
             for (let i = 0; i < chaptersToDownload.length; i++) {
                 const ch = chaptersToDownload[i];
                 try {
                     document.getElementById('downloadProgressText').textContent = `下载中: ${ch.name} (${i + 1}/${chaptersToDownload.length})`;
                     const result = await fetchHtml(ch.url);
-                    
                     if (result.success) {
                         const parser = new AnalyzeRule().setContent(result.content, result.url);
                         let content = parser.getString(contentRule);
@@ -1419,16 +1413,14 @@
                             content = content.replace(/&nbsp;/g, ' ').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
                             downloadedContent += `第${i + 1}章 ${ch.name}\n\n${content}\n\n`;
                             success++;
-                            logPanel.innerHTML += `<div class="log-item log-success">✓ ${ch.name}</div>`;
+                            logPanel.innerHTML += `<div class="log-item log-success">✓ ${ch.name}${result.fromCache ? '(缓存)' : ''}</div>`;
                         } else { fail++; logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: 内容为空</div>`; }
                     } else { fail++; logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: 请求失败</div>`; }
                 } catch (e) { fail++; logPanel.innerHTML += `<div class="log-item log-error">✗ ${ch.name}: ${e.message}</div>`; }
-                
                 document.getElementById('downloadProgressFill').style.width = Math.round((i + 1) / chaptersToDownload.length * 100) + '%';
                 logPanel.scrollTop = logPanel.scrollHeight;
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, delay));
             }
-            
             document.getElementById('downloadProgressText').textContent = `下载完成！成功: ${success}, 失败: ${fail}`;
             document.getElementById('saveActions').classList.remove('hidden');
             saveToHistory();
@@ -1464,15 +1456,7 @@
         function renderHistory() {
             const list = document.getElementById('historyList');
             if (!downloadHistory.length) { list.innerHTML = '<p class="loading">暂无记录</p>'; return; }
-            list.innerHTML = downloadHistory.map(item => `
-                <div class="history-item">
-                    <div class="history-info">
-                        <h4>《${item.name}》</h4>
-                        <p>${item.author || ''} | ${item.size} | ${item.date}</p>
-                    </div>
-                    <button class="btn btn-small" onclick="downloadHistoryItem(${item.id})">保存</button>
-                </div>
-            `).join('');
+            list.innerHTML = downloadHistory.map(item => `<div class="history-item"><div class="history-info"><h4>《${item.name}》</h4><p>${item.author || ''} | ${item.size} | ${item.date}</p></div><button class="btn btn-small" onclick="downloadHistoryItem(${item.id})">保存</button></div>`).join('');
         }
         
         function downloadHistoryItem(id) {
