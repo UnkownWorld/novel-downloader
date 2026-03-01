@@ -1,0 +1,21 @@
+{
+  "name": "novel-downloader",
+  "version": "2.0.0",
+  "description": "小说下载器 - 基于 Legado 开源项目",
+  "scripts": {
+    "dev": "npx wrangler pages dev public --port 8788",
+    "deploy": "npx wrangler pages deploy public"
+  },
+  "keywords": [
+    "novel",
+    "downloader",
+    "legado",
+    "reader"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/UnkownWorld/novel-downloader.git"
+  }
+}

@@ -1,0 +1,11 @@
+name = "novel-downloader"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "public"
+
+# KV命名空间绑定（可选，用于缓存）
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
+
+[vars]
+ENVIRONMENT = "production"
