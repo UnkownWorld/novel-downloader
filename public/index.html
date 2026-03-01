@@ -794,8 +794,10 @@
                 const result = await fetchHtml(window.location.origin + '/sources.json');
                 
                 if (result.success) {
-                    const onlineSources = JSON.parse(result.content);
-                    if (Array.isArray(onlineSources) && onlineSources.length > 0) {
+                    const data = JSON.parse(result.content);
+                    const onlineSources = extractBookSources(data);
+                    
+                    if (onlineSources.length > 0) {
                         bookSources = onlineSources;
                         Storage.set('bookSources', bookSources);
                         Storage.set('lastUpdate', Date.now());
@@ -916,23 +918,120 @@
             `).join('');
         }
         
+        // 从各种格式中提取书源数组
+        function extractBookSources(data) {
+            // 1. 如果已经是数组，直接返回
+            if (Array.isArray(data)) {
+                return data;
+            }
+            
+            // 2. 如果是单个书源对象
+            if (data && typeof data === 'object' && data.bookSourceName && data.bookSourceUrl) {
+                return [data];
+            }
+            
+            // 3. 处理嵌套格式: {"content": [{"type": "text", "text": "[...]"}]}
+            if (data && data.content && Array.isArray(data.content)) {
+                const sources = [];
+                for (const item of data.content) {
+                    if (item && item.text) {
+                        try {
+                            const parsed = JSON.parse(item.text);
+                            if (Array.isArray(parsed)) {
+                                sources.push(...parsed);
+                            } else if (parsed && typeof parsed === 'object') {
+                                sources.push(parsed);
+                            }
+                        } catch (e) {
+                            // text不是JSON，跳过
+                        }
+                    }
+                }
+                if (sources.length > 0) return sources;
+            }
+            
+            // 4. 处理格式: {"content": "[...]" 或 {...}}
+            if (data && typeof data.content === 'string') {
+                try {
+                    const parsed = JSON.parse(data.content);
+                    if (Array.isArray(parsed)) return parsed;
+                    if (parsed && typeof parsed === 'object') return [parsed];
+                } catch (e) {}
+            }
+            
+            // 5. 处理格式: {"data": [...]}
+            if (data && data.data && Array.isArray(data.data)) {
+                return data.data;
+            }
+            
+            // 6. 处理格式: {"sources": [...]}
+            if (data && data.sources && Array.isArray(data.sources)) {
+                return data.sources;
+            }
+            
+            // 7. 处理格式: {"items": [...]}
+            if (data && data.items && Array.isArray(data.items)) {
+                return data.items;
+            }
+            
+            // 8. 尝试查找对象中第一个数组类型的属性
+            if (data && typeof data === 'object') {
+                for (const key of Object.keys(data)) {
+                    const value = data[key];
+                    if (Array.isArray(value) && value.length > 0) {
+                        // 检查数组元素是否像书源
+                        const first = value[0];
+                        if (first && typeof first === 'object' && (first.bookSourceName || first.bookSourceUrl)) {
+                            return value;
+                        }
+                    }
+                    // 处理字符串形式的JSON
+                    if (typeof value === 'string') {
+                        try {
+                            const parsed = JSON.parse(value);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                const first = parsed[0];
+                                if (first && typeof first === 'object' && (first.bookSourceName || first.bookSourceUrl)) {
+                                    return parsed;
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+            
+            // 无法识别格式，返回空数组
+            return [];
+        }
+        
         function importSources() {
             const input = document.getElementById('sourceInput').value.trim();
             if (!input) { showToast('请输入JSON内容', true); return; }
             
             try {
                 const data = JSON.parse(input);
-                const sources = Array.isArray(data) ? data : [data];
-                let added = 0, updated = 0;
+                const sources = extractBookSources(data);
+                
+                if (sources.length === 0) {
+                    showToast('未找到有效的书源数据，请检查JSON格式', true);
+                    return;
+                }
+                
+                let added = 0, updated = 0, skipped = 0;
                 
                 sources.forEach(s => {
-                    if (!s.bookSourceName || !s.bookSourceUrl) return;
+                    if (!s.bookSourceName || !s.bookSourceUrl) {
+                        skipped++;
+                        return;
+                    }
                     const existingIndex = bookSources.findIndex(existing => existing.bookSourceUrl === s.bookSourceUrl);
                     if (existingIndex >= 0) {
-                        bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: true };
+                        // 保留原有的额外字段，用新数据覆盖
+                        bookSources[existingIndex] = { ...bookSources[existingIndex], ...s, enabled: s.enabled !== false };
                         updated++;
                     } else {
-                        bookSources.push({ ...s, enabled: true });
+                        // 添加新书源，保留所有字段
+                        bookSources.push({ ...s, enabled: s.enabled !== false });
                         added++;
                     }
                 });
@@ -942,7 +1041,12 @@
                 updateSourceSelect();
                 renderSourceList();
                 document.getElementById('sourceInput').value = '';
-                showToast(`成功导入 ${added} 个，更新 ${updated} 个书源`);
+                
+                let message = `成功导入 ${added} 个，更新 ${updated} 个书源`;
+                if (skipped > 0) {
+                    message += `，跳过 ${skipped} 个无效项`;
+                }
+                showToast(message);
             } catch (e) {
                 showToast('JSON格式错误: ' + e.message, true);
             }
